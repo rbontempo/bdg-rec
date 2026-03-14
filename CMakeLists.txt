@@ -29,6 +29,7 @@ target_sources(BDG_REC PRIVATE
     src/OutputPanel.cpp
     src/AudioEngine.cpp
     src/Dsp.cpp
+    src/VuMeter.cpp
 )
 
 target_compile_definitions(BDG_REC PRIVATE

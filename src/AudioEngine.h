@@ -28,10 +28,17 @@ public:
     // Device enumeration / selection
     juce::StringArray getInputDevices();
     void setInputDevice(const juce::String& name);
+    juce::String getCurrentInputDeviceName() const;
+
+    // Access device manager (for UI components)
+    juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
 
     // Software gain (0.0 – 2.0)
     void  setGain(float g);
     float getGain() const;
+
+    // Monitor: route input to output in real-time
+    void setMonitorEnabled(bool enabled);
 
     // RMS levels (post-gain, 0.0 – 1.0)
     float getRmsL() const;
@@ -76,6 +83,7 @@ private:
     std::atomic<float> rmsL{0.0f};
     std::atomic<float> rmsR{0.0f};
     std::atomic<float> gain{1.0f};
+    std::atomic<bool>  monitorEnabled{false};
 
     juce::ListenerList<Listener> listeners;
 

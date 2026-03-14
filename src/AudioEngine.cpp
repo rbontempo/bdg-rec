@@ -42,6 +42,13 @@ juce::StringArray AudioEngine::getInputDevices()
     return names;
 }
 
+juce::String AudioEngine::getCurrentInputDeviceName() const
+{
+    if (auto* dev = deviceManager.getCurrentAudioDevice())
+        return dev->getName();
+    return {};
+}
+
 void AudioEngine::setInputDevice(const juce::String& name)
 {
     auto setup = deviceManager.getAudioDeviceSetup();
@@ -59,6 +66,25 @@ void AudioEngine::setGain(float g)
 float AudioEngine::getGain() const
 {
     return gain.load();
+}
+
+void AudioEngine::setMonitorEnabled(bool enabled)
+{
+    monitorEnabled.store(enabled);
+
+    // Re-open device with output channels when monitoring is on
+    auto setup = deviceManager.getAudioDeviceSetup();
+    if (enabled)
+    {
+        setup.outputDeviceName = setup.inputDeviceName;
+        setup.useDefaultOutputChannels = true;
+    }
+    else
+    {
+        setup.outputChannels.clear();
+        setup.useDefaultOutputChannels = false;
+    }
+    deviceManager.setAudioDeviceSetup(setup, true);
 }
 
 float AudioEngine::getRmsL() const
@@ -107,8 +133,8 @@ void AudioEngine::audioDeviceStopped()
 void AudioEngine::audioDeviceIOCallbackWithContext(
     const float* const* inputChannelData,
     int numInputChannels,
-    float* const* /*outputChannelData*/,
-    int /*numOutputChannels*/,
+    float* const* outputChannelData,
+    int numOutputChannels,
     int numSamples,
     const juce::AudioIODeviceCallbackContext& /*context*/)
 {
@@ -134,6 +160,33 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 
     rmsL.store(computeRms(0));
     rmsR.store(computeRms(numInputChannels > 1 ? 1 : 0));
+
+    // ---- Monitor: route input to output ----
+    if (monitorEnabled.load() && numOutputChannels > 0)
+    {
+        for (int outCh = 0; outCh < numOutputChannels; ++outCh)
+        {
+            if (outputChannelData[outCh] == nullptr)
+                continue;
+
+            int inCh = outCh < numInputChannels ? outCh : 0;
+            if (inputChannelData[inCh] != nullptr)
+            {
+                for (int i = 0; i < numSamples; ++i)
+                    outputChannelData[outCh][i] = inputChannelData[inCh][i] * g;
+            }
+            else
+            {
+                juce::FloatVectorOperations::clear(outputChannelData[outCh], numSamples);
+            }
+        }
+    }
+    else if (numOutputChannels > 0)
+    {
+        for (int outCh = 0; outCh < numOutputChannels; ++outCh)
+            if (outputChannelData[outCh] != nullptr)
+                juce::FloatVectorOperations::clear(outputChannelData[outCh], numSamples);
+    }
 
     // ---- Throttled UI notification (50 ms) ----
     const juce::int64 now = juce::Time::currentTimeMillis();

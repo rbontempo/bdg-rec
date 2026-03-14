@@ -1,7 +1,68 @@
 #include "InputPanel.h"
 
-InputPanel::InputPanel() {}
+//==============================================================================
+InputPanel::InputPanel(AudioEngine& engine)
+    : audioEngine(engine)
+{
+    // ---- Device ComboBox ----
+    auto devices = audioEngine.getInputDevices();
+    for (int i = 0; i < devices.size(); ++i)
+        deviceCombo.addItem(devices[i], i + 1);
 
+    // Pre-select the currently active device if known
+    {
+        juce::String currentName = audioEngine.getCurrentInputDeviceName();
+        int idx = devices.indexOf(currentName);
+        if (idx >= 0)
+            deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
+    }
+
+    deviceCombo.onChange = [this]()
+    {
+        const juce::String name = deviceCombo.getText();
+        if (name.isNotEmpty())
+            audioEngine.setInputDevice(name);
+    };
+
+    addAndMakeVisible(deviceCombo);
+
+    // ---- VU Meter ----
+    addAndMakeVisible(vuMeter);
+    audioEngine.addListener(this);
+
+    // ---- Volume Slider ----
+    volumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    volumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    volumeSlider.setRange(0.0, 200.0, 1.0);
+    volumeSlider.setValue(100.0);
+    volumeSlider.onValueChange = [this]()
+    {
+        audioEngine.setGain(static_cast<float>(volumeSlider.getValue()) / 100.0f);
+    };
+    addAndMakeVisible(volumeSlider);
+
+    // ---- Monitor Toggle ----
+    monitorButton.setButtonText("Monitorar");
+    monitorButton.setToggleState(false, juce::dontSendNotification);
+    monitorButton.onClick = [this]()
+    {
+        audioEngine.setMonitorEnabled(monitorButton.getToggleState());
+    };
+    addAndMakeVisible(monitorButton);
+}
+
+InputPanel::~InputPanel()
+{
+    audioEngine.removeListener(this);
+}
+
+//==============================================================================
+void InputPanel::audioLevelsChanged(float l, float r)
+{
+    vuMeter.setLevels(l, r);
+}
+
+//==============================================================================
 void InputPanel::paint(juce::Graphics& g)
 {
     const float corner = 8.0f;
@@ -36,17 +97,19 @@ void InputPanel::paint(juce::Graphics& g)
         mic.addRoundedRectangle(capX, iy, capW, capH, capW * 0.5f);
         g.fillPath(mic);
 
-        // Mic arm (arc below capsule, drawn as a thin rounded rect arc approximation)
+        // Mic arm
         juce::Path arm;
         const float armCX = ix + iconW * 0.5f;
         const float armTopY = iy + capH * 0.7f;
         const float armR = iconW * 0.4f;
         arm.addCentredArc(armCX, armTopY, armR, armR, 0.0f,
-                          juce::MathConstants<float>::pi, 2.0f * juce::MathConstants<float>::pi, true);
-        g.strokePath(arm, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                          juce::MathConstants<float>::pi,
+                          2.0f * juce::MathConstants<float>::pi, true);
+        g.strokePath(arm, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
 
-        // Stand (vertical line + base)
-        const float standX = armCX;
+        // Stand
+        const float standX   = armCX;
         const float standTop = armTopY + armR;
         const float standBot = iy + iconH - 1.0f;
         g.drawLine(standX, standTop, standX, standBot, 1.5f);
@@ -67,4 +130,105 @@ void InputPanel::paint(juce::Graphics& g)
     // Header separator line
     g.setColour(BdgColours::border);
     g.drawHorizontalLine((int)headerH, bounds.getX() + 1.0f, bounds.getRight() - 1.0f);
+
+    // ---- Device section label ----
+    const float pad  = 14.0f;
+    const float labelFont = 10.0f;
+    juce::Font sectionFont(juce::FontOptions().withHeight(labelFont));
+    g.setFont(sectionFont);
+    g.setColour(BdgColours::textMuted);
+    g.drawText("DISPOSITIVO",
+               juce::Rectangle<float>(pad, headerH + 12.0f, bounds.getWidth() - pad * 2.0f, 14.0f),
+               juce::Justification::centredLeft, false);
+
+    // ---- VU Meter label ----
+    const float vuLabelY = (float)vuMeter.getY() - 18.0f;
+    g.drawText("NIVEL",
+               juce::Rectangle<float>(pad, vuLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
+               juce::Justification::centredLeft, false);
+
+    // ---- Volume section label + percentage ----
+    const float volLabelY = (float)volumeSlider.getY() - 18.0f;
+    g.drawText("VOLUME",
+               juce::Rectangle<float>(pad, volLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
+               juce::Justification::centredLeft, false);
+
+    juce::String volPct = juce::String((int)volumeSlider.getValue()) + "%";
+    g.setColour(BdgColours::primary);
+    g.drawText(volPct,
+               juce::Rectangle<float>(pad, volLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
+               juce::Justification::centredRight, false);
+
+    // ---- Monitor section top border ----
+    const float monitorY = (float)monitorButton.getY() - 10.0f;
+    g.setColour(BdgColours::border);
+    g.drawHorizontalLine((int)monitorY, bounds.getX() + 1.0f, bounds.getRight() - 1.0f);
+
+    // ---- Headphones icon (left of monitor button area) ----
+    {
+        g.setColour(BdgColours::textMuted);
+        const float iconSize = 14.0f;
+        const float iconX    = pad;
+        const float iconY    = (float)monitorButton.getY() + (monitorButton.getHeight() - iconSize) * 0.5f;
+
+        // Draw headphone: arc on top, two ear cups
+        juce::Path hp;
+        const float hpCX = iconX + iconSize * 0.5f;
+        const float hpCY = iconY + iconSize * 0.55f;
+        const float hpR  = iconSize * 0.42f;
+        // Headband arc
+        hp.addCentredArc(hpCX, hpCY, hpR, hpR * 0.9f, 0.0f,
+                         juce::MathConstants<float>::pi,
+                         2.0f * juce::MathConstants<float>::pi, true);
+        g.strokePath(hp, juce::PathStrokeType(1.5f));
+
+        // Left ear cup
+        g.fillRoundedRectangle(iconX, iconY + iconSize * 0.35f,
+                               iconSize * 0.22f, iconSize * 0.4f, 2.0f);
+        // Right ear cup
+        g.fillRoundedRectangle(iconX + iconSize * 0.78f, iconY + iconSize * 0.35f,
+                               iconSize * 0.22f, iconSize * 0.4f, 2.0f);
+    }
+}
+
+//==============================================================================
+void InputPanel::resized()
+{
+    const int w       = getWidth();
+    const int pad     = 14;
+    const int headerH = 40;
+    const int innerW  = w - pad * 2;
+
+    int y = headerH + 12;
+
+    // Device label space (14px) + 4px gap
+    y += 14 + 4;
+
+    // Device ComboBox (28px)
+    deviceCombo.setBounds(pad, y, innerW, 28);
+    y += 28 + 16;
+
+    // VU meter label space (14px) + 4px gap
+    y += 14 + 4;
+
+    // VU Meter: height = 2 bars (10px each) + 1 gap (6px) + scale (14px)
+    const int vuH = 10 + 6 + 10 + 14;
+    vuMeter.setBounds(pad, y, innerW, vuH);
+    y += vuH + 16;
+
+    // Volume label space (14px) + 4px gap
+    y += 14 + 4;
+
+    // Volume slider (24px)
+    volumeSlider.setBounds(pad + 20, y, innerW - 20, 24);
+    y += 24 + 8;
+
+    // Monitor toggle: pinned to bottom
+    const int monitorH  = 36;
+    const int monitorY  = getHeight() - monitorH - pad;
+    const int toggleH   = 24;
+
+    // Position toggle on the right, "Monitorar" text is part of button
+    monitorButton.setBounds(pad + 20, monitorY + (monitorH - toggleH) / 2,
+                            innerW - 20, toggleH);
 }
