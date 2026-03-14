@@ -30,6 +30,8 @@ target_sources(BDG_REC PRIVATE
     src/AudioEngine.cpp
     src/Dsp.cpp
     src/VuMeter.cpp
+    src/WaveformDisplay.cpp
+    src/RecordButton.cpp
 )
 
 target_compile_definitions(BDG_REC PRIVATE
