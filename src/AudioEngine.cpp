@@ -392,8 +392,6 @@ bool AudioEngine::openNextChunk()
         return false;
     }
 
-    rawChunkStream = fileStream.get();
-
     auto* writer = wavFormat.createWriterFor(
         fileStream.get(),
         nativeSampleRate.load(),
@@ -405,7 +403,6 @@ bool AudioEngine::openNextChunk()
     if (writer == nullptr)
     {
         DBG("  Failed to create WAV writer for chunk " + juce::String(chunkIndex));
-        rawChunkStream = nullptr;
         chunkRotationPending.store(false);
         return false;
     }
@@ -511,8 +508,6 @@ juce::File AudioEngine::stopRecording()
         writerThread->stopThread(2000);
         writerThread.reset();
     }
-
-    rawChunkStream = nullptr;
 
     // Concatenate all chunks into final file
     juce::File finalFile = concatenateChunks();

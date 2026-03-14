@@ -131,7 +131,6 @@ private:
     int chunkIndex{0};
     std::atomic<juce::int64> samplesInChunk{0};
     juce::int64 samplesPerChunk{0}; // 5 min * sampleRate
-    juce::FileOutputStream* rawChunkStream{nullptr}; // non-owning, for flush access
     std::atomic<bool> chunkRotationPending{false};
 
     // SpinLock to protect threadedWriter during chunk rotation

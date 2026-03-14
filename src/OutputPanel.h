@@ -30,7 +30,10 @@ public:
     // Callback for settings changes (Task 18)
     std::function<void()> onSettingsChanged;
 
+    void setSampleRate(int sr) { actualSampleRate = sr; repaint(); }
+
 private:
+    int actualSampleRate{48000};
     // Folder button (clickable)
     struct FolderButton : public juce::Component
     {

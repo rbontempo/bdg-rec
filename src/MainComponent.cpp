@@ -18,6 +18,9 @@ MainComponent::MainComponent()
     audioEngine.initialise();
     audioEngine.addListener(this);
 
+    if (auto* dev = audioEngine.getDeviceManager().getCurrentAudioDevice())
+        outputPanel.setSampleRate((int)dev->getCurrentSampleRate());
+
     addAndMakeVisible(headerBar);
     addAndMakeVisible(inputPanel);
     addAndMakeVisible(recordingPanel);

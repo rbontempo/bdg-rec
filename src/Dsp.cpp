@@ -292,19 +292,13 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
 
     if (needsResample)
     {
-        // Linear-interpolation resample to 48 kHz
         double ratio = targetRate / sampleRate;
-        processLen = static_cast<int>(numSamples * ratio);
-        resampled.resize(static_cast<size_t>(processLen));
+        processLen = (int)(numSamples * ratio);
+        resampled.resize(processLen);
 
-        for (int i = 0; i < processLen; ++i)
-        {
-            double srcPos = i / ratio;
-            int idx = static_cast<int>(srcPos);
-            double frac = srcPos - idx;
-            int idx1 = std::min(idx + 1, numSamples - 1);
-            resampled[static_cast<size_t>(i)] = static_cast<float>((1.0 - frac) * data[idx] + frac * data[idx1]);
-        }
+        juce::LagrangeInterpolator interpolator;
+        interpolator.reset();
+        interpolator.process(1.0 / ratio, data, resampled.data(), processLen);
         processData = resampled.data();
     }
 
@@ -347,15 +341,12 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
     // If we resampled, convert back to original sample rate
     if (needsResample)
     {
-        for (int i = 0; i < numSamples; ++i)
-        {
-            double srcIdx = static_cast<double>(i) * processLen / numSamples;
-            int idx = static_cast<int>(srcIdx);
-            double frac = srcIdx - idx;
-            int idx1 = std::min(idx + 1, processLen - 1);
-            data[i] = static_cast<float>((1.0 - frac) * output[static_cast<size_t>(idx)]
-                                         + frac * output[static_cast<size_t>(idx1)]);
-        }
+        juce::LagrangeInterpolator interpolator;
+        interpolator.reset();
+        std::vector<float> backSampled(numSamples);
+        double ratio = sampleRate / targetRate;
+        interpolator.process(1.0 / ratio, output.data(), backSampled.data(), numSamples);
+        std::copy(backSampled.begin(), backSampled.end(), data);
     }
     else
     {
