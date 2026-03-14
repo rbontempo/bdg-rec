@@ -22,6 +22,11 @@ juce_add_gui_app(BDG_REC
 target_sources(BDG_REC PRIVATE
     src/Main.cpp
     src/MainComponent.cpp
+    src/BdgLookAndFeel.cpp
+    src/HeaderBar.cpp
+    src/InputPanel.cpp
+    src/RecordingPanel.cpp
+    src/OutputPanel.cpp
 )
 
 target_compile_definitions(BDG_REC PRIVATE
