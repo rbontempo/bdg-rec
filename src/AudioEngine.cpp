@@ -258,6 +258,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         }
 
         threadedWriter->write(monoBuffer.getArrayOfReadPointers(), numSamples);
+
+        samplesInChunk += numSamples;
+
+        if (samplesInChunk >= samplesPerChunk)
+        {
+            juce::MessageManager::callAsync([this]() {
+                if (recording.load())
+                    openNextChunk();
+            });
+        }
     }
 }
 
@@ -313,12 +323,6 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     if (!destFolder.isDirectory())
         destFolder.createDirectory();
 
-    // Build filename: BDG_rec_YYYY-MM-DD_HH-MM-SS.wav
-    const juce::String timestamp =
-        juce::Time::getCurrentTime().formatted("%Y-%m-%d_%H-%M-%S");
-    const juce::String filename = "BDG_rec_" + timestamp + ".wav";
-    currentRecordingFile = destFolder.getChildFile(filename);
-
     // Retrieve current device parameters
     if (auto* device = deviceManager.getCurrentAudioDevice())
     {
@@ -329,21 +333,58 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     }
     else
     {
-        // No device open — cannot record
         return false;
     }
 
-    // Create the output WAV file
+    // Create timestamped subfolder for chunks
+    const juce::String timestamp =
+        juce::Time::getCurrentTime().formatted("%Y-%m-%d_%H-%M-%S");
+    chunkFolder = destFolder.getChildFile("BDG_rec_" + timestamp);
+    chunkFolder.createDirectory();
+
+    // 5 minutes per chunk
+    samplesPerChunk = (juce::int64)(5.0 * 60.0 * nativeSampleRate);
+    chunkIndex = 0;
+
+    if (!openNextChunk())
+    {
+        chunkFolder.deleteRecursively();
+        return false;
+    }
+
+    recording.store(true);
+    DBG("  Chunk recording started. chunkFolder=" + chunkFolder.getFullPathName()
+        + " samplesPerChunk=" + juce::String(samplesPerChunk));
+    return true;
+}
+
+bool AudioEngine::openNextChunk()
+{
+    // Flush and close current chunk
+    threadedWriter.reset();
+
+    if (writerThread != nullptr)
+    {
+        writerThread->stopThread(2000);
+        writerThread.reset();
+    }
+
+    chunkIndex++;
+
+    juce::File chunkFile = chunkFolder.getChildFile(
+        juce::String::formatted("chunk_%03d.wav", chunkIndex));
+
     auto fileStream = std::unique_ptr<juce::FileOutputStream>(
-        currentRecordingFile.createOutputStream());
+        chunkFile.createOutputStream());
 
     if (fileStream == nullptr)
     {
-        DBG("  Failed to create FileOutputStream for: " + currentRecordingFile.getFullPathName());
+        DBG("  Failed to create FileOutputStream for chunk: " + chunkFile.getFullPathName());
         return false;
     }
 
-    // Create a WAV writer: mono, nativeSampleRate, 24-bit
+    rawChunkStream = fileStream.get();
+
     auto* writer = wavFormat.createWriterFor(
         fileStream.get(),
         nativeSampleRate,
@@ -354,30 +395,96 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
 
     if (writer == nullptr)
     {
-        DBG("  Failed to create WAV writer. SR=" + juce::String(nativeSampleRate) + " ch=" + juce::String(nativeChannels));
+        DBG("  Failed to create WAV writer for chunk " + juce::String(chunkIndex));
+        rawChunkStream = nullptr;
         return false;
     }
-    DBG("  WAV writer created. SR=" + juce::String(nativeSampleRate) + " file=" + currentRecordingFile.getFullPathName());
 
     // Transfer ownership of the stream to the writer
     fileStream.release();
 
-    // Spin up the background writer thread
     writerThread = std::make_unique<juce::TimeSliceThread>("BDG Audio Writer");
     writerThread->startThread();
 
     threadedWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(
         writer, *writerThread, 65536);
 
-    recording.store(true);
+    samplesInChunk = 0;
+
+    DBG("  Opened chunk " + juce::String(chunkIndex) + ": " + chunkFile.getFullPathName());
     return true;
+}
+
+juce::File AudioEngine::concatenateChunks()
+{
+    juce::File finalFile = chunkFolder.getParentDirectory().getChildFile(
+        chunkFolder.getFileName() + ".wav");
+
+    auto outStream = std::unique_ptr<juce::FileOutputStream>(
+        finalFile.createOutputStream());
+
+    if (outStream == nullptr)
+    {
+        DBG("  concatenateChunks: failed to create output stream");
+        return {};
+    }
+
+    auto* finalWriter = wavFormat.createWriterFor(
+        outStream.get(),
+        nativeSampleRate,
+        1,    // mono
+        24,   // bit depth
+        {},   // metadata
+        0);   // quality option index
+
+    if (finalWriter == nullptr)
+    {
+        DBG("  concatenateChunks: failed to create WAV writer");
+        return {};
+    }
+
+    outStream.release(); // writer owns the stream
+
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+
+    for (int i = 1; i <= chunkIndex; ++i)
+    {
+        juce::File chunkFile = chunkFolder.getChildFile(
+            juce::String::formatted("chunk_%03d.wav", i));
+
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            formatManager.createReaderFor(chunkFile));
+
+        if (reader == nullptr)
+        {
+            DBG("  concatenateChunks: skipping corrupted chunk " + juce::String(i));
+            continue;
+        }
+
+        const juce::int64 totalSamples = reader->lengthInSamples;
+        const int blockSize = 65536;
+        juce::AudioBuffer<float> buffer(1, blockSize);
+
+        for (juce::int64 pos = 0; pos < totalSamples; pos += blockSize)
+        {
+            int samplesToRead = (int)juce::jmin((juce::int64)blockSize, totalSamples - pos);
+            reader->read(&buffer, 0, samplesToRead, pos, true, false);
+            finalWriter->writeFromAudioSampleBuffer(buffer, 0, samplesToRead);
+        }
+    }
+
+    delete finalWriter;
+
+    DBG("  concatenateChunks: final file = " + finalFile.getFullPathName());
+    return finalFile;
 }
 
 juce::File AudioEngine::stopRecording()
 {
     recording.store(false);
 
-    // Destroying ThreadedWriter flushes and closes the file
+    // Flush and close current chunk
     threadedWriter.reset();
 
     if (writerThread != nullptr)
@@ -386,7 +493,15 @@ juce::File AudioEngine::stopRecording()
         writerThread.reset();
     }
 
-    return currentRecordingFile;
+    rawChunkStream = nullptr;
+
+    // Concatenate all chunks into final file
+    juce::File finalFile = concatenateChunks();
+
+    // Clean up chunk folder
+    chunkFolder.deleteRecursively();
+
+    return finalFile;
 }
 
 bool AudioEngine::isRecording() const
@@ -400,7 +515,8 @@ bool AudioEngine::isRecording() const
 void AudioEngine::processRecording(const juce::File& file,
                                    bool doNormalize,
                                    bool doNoiseReduction,
-                                   bool doCompressor)
+                                   bool doCompressor,
+                                   bool doDeEsser)
 {
     // If a previous DSP thread is still running, wait for it
     if (dspThread != nullptr)
@@ -415,10 +531,10 @@ void AudioEngine::processRecording(const juce::File& file,
     class DspThread : public juce::Thread
     {
     public:
-        DspThread(AudioEngine* e, juce::File f, bool norm, bool nr, bool comp)
+        DspThread(AudioEngine* e, juce::File f, bool norm, bool nr, bool comp, bool de)
             : juce::Thread("BDG DSP"),
               engine(e), file(std::move(f)),
-              doNormalize(norm), doNoiseReduction(nr), doCompressor(comp) {}
+              doNormalize(norm), doNoiseReduction(nr), doCompressor(comp), doDeEsser(de) {}
 
         void run() override
         {
@@ -487,7 +603,7 @@ void AudioEngine::processRecording(const juce::File& file,
             {
                 DBG("DSP: running normalize on " + juce::String(numSamples) + " samples");
                 emitStep("normalize");
-                Dsp::normalize(buffer);
+                Dsp::normalize(buffer, sampleRate);
                 DBG("DSP: normalize done");
             }
 
@@ -510,6 +626,15 @@ void AudioEngine::processRecording(const juce::File& file,
             {
                 emitStep("compressor");
                 Dsp::compress(buffer, sampleRate);
+            }
+
+            if (threadShouldExit()) { emitError("Cancelado"); return; }
+
+            // 6) De-Esser
+            if (doDeEsser)
+            {
+                emitStep("de_esser");
+                Dsp::deEss(buffer, sampleRate);
             }
 
             if (threadShouldExit()) { emitError("Cancelado"); return; }
@@ -558,10 +683,10 @@ void AudioEngine::processRecording(const juce::File& file,
     private:
         AudioEngine* engine;
         juce::File file;
-        bool doNormalize, doNoiseReduction, doCompressor;
+        bool doNormalize, doNoiseReduction, doCompressor, doDeEsser;
     };
 
     dspThread = std::make_unique<DspThread>(engine, file,
-                                            doNormalize, doNoiseReduction, doCompressor);
+                                            doNormalize, doNoiseReduction, doCompressor, doDeEsser);
     dspThread->startThread();
 }

@@ -62,7 +62,8 @@ public:
     void processRecording(const juce::File& file,
                           bool normalize,
                           bool noiseReduction,
-                          bool compressor);
+                          bool compressor,
+                          bool deEsser);
 
     //==============================================================================
     // AudioIODeviceCallback
@@ -105,10 +106,19 @@ private:
     std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter>  threadedWriter;
 
     juce::WavAudioFormat  wavFormat;
-    juce::File            currentRecordingFile;
 
     int    nativeChannels{0};
     double nativeSampleRate{0.0};
+
+    // Chunk recording
+    juce::File chunkFolder;
+    int chunkIndex{0};
+    juce::int64 samplesInChunk{0};
+    juce::int64 samplesPerChunk{0}; // 5 min * sampleRate
+    juce::FileOutputStream* rawChunkStream{nullptr}; // non-owning, for flush access
+
+    bool openNextChunk();
+    juce::File concatenateChunks();
 
     //==============================================================================
     // DSP background thread
