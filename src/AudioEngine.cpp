@@ -17,7 +17,8 @@ AudioEngine::~AudioEngine()
     if (recording.load())
         stopRecording();
 
-    // Unregister audio callback before destruction
+    // Unregister callbacks before destruction
+    deviceManager.removeChangeListener(this);
     deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
 }
@@ -29,6 +30,9 @@ void AudioEngine::initialise()
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     deviceManager.initialiseWithDefaultDevices(2, 0);
     deviceManager.addAudioCallback(this);
+
+    // Listen for device changes (hot-plug) — Task 19
+    deviceManager.addChangeListener(this);
 }
 
 //==============================================================================
@@ -225,6 +229,29 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 void AudioEngine::handleAsyncUpdate()
 {
     listeners.call(&Listener::audioLevelsChanged, rmsL.load(), rmsR.load());
+}
+
+//==============================================================================
+// ChangeListener – device hot-plug (Task 19)
+//==============================================================================
+void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
+{
+    // This is called on the message thread by AudioDeviceManager when
+    // the device configuration changes (including hot-plug events).
+
+    // If we are recording and the current device is gone, stop recording
+    if (recording.load())
+    {
+        if (deviceManager.getCurrentAudioDevice() == nullptr)
+        {
+            stopRecording();
+            listeners.call(&Listener::dspError,
+                           juce::String("Dispositivo de audio desconectado durante gravacao."));
+        }
+    }
+
+    // Notify all listeners so UI can refresh device list
+    listeners.call(&Listener::devicesChanged);
 }
 
 //==============================================================================

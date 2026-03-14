@@ -3,7 +3,8 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 class AudioEngine : public juce::AudioIODeviceCallback,
-                    public juce::AsyncUpdater
+                    public juce::AsyncUpdater,
+                    public juce::ChangeListener
 {
 public:
     //==============================================================================
@@ -16,6 +17,8 @@ public:
         virtual void dspStepChanged(const juce::String& step) {}
         virtual void dspFinished(const juce::File& file) {}
         virtual void dspError(const juce::String& error) {}
+        // Called on the message thread when the device list changes (Task 19)
+        virtual void devicesChanged() {}
     };
 
     //==============================================================================
@@ -76,6 +79,10 @@ public:
     //==============================================================================
     // AsyncUpdater
     void handleAsyncUpdate() override;
+
+    //==============================================================================
+    // ChangeListener – receives device-manager change notifications (Task 19)
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
 private:
     juce::AudioDeviceManager deviceManager;
