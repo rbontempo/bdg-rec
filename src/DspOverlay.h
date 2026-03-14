@@ -24,6 +24,7 @@ private:
 
     struct Step
     {
+        juce::String key;   // matches AudioEngine emitted step IDs
         juce::String name;
         bool         enabled = true;
         StepState    state   = StepState::Pending;

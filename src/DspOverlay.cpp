@@ -4,11 +4,11 @@
 DspOverlay::DspOverlay()
 {
     // Build the step list (all steps; some may be hidden)
-    steps.add({ Strings::get().normalizacao,        true,  StepState::Pending });
-    steps.add({ Strings::get().reducaoRuidoStep,    true,  StepState::Pending });
-    steps.add({ Strings::get().compressor,          true,  StepState::Pending });
-    steps.add({ Strings::get().deEsser,             true,  StepState::Pending });
-    steps.add({ Strings::get().salvandoArquivo,     true,  StepState::Pending });
+    steps.add({ "normalize",       Strings::get().normalizacao,        true,  StepState::Pending });
+    steps.add({ "noise_reduction", Strings::get().reducaoRuidoStep,    true,  StepState::Pending });
+    steps.add({ "compressor",      Strings::get().compressor,          true,  StepState::Pending });
+    steps.add({ "de_esser",        Strings::get().deEsser,             true,  StepState::Pending });
+    steps.add({ "saving",          Strings::get().salvandoArquivo,     true,  StepState::Pending });
 
     setVisible(false);
     setInterceptsMouseClicks(true, true); // block all clicks behind
@@ -54,7 +54,7 @@ void DspOverlay::setCurrentStep(const juce::String& stepName)
 
     for (auto& s : steps)
     {
-        if (s.name.equalsIgnoreCase(stepName) && s.enabled)
+        if (s.key == stepName && s.enabled)
         {
             s.state = StepState::Active;
             break;

@@ -7,6 +7,9 @@ AudioEngine::AudioEngine() = default;
 
 AudioEngine::~AudioEngine()
 {
+    // Mark as dead so pending callAsync lambdas bail out
+    alive->store(false);
+
     // Stop DSP thread if active
     if (dspThread != nullptr)
     {
@@ -155,16 +158,16 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     if (device != nullptr)
     {
-        nativeSampleRate = device->getCurrentSampleRate();
-        nativeChannels   = device->getActiveInputChannels().countNumberOfSetBits();
-        if (nativeChannels == 0)
-            nativeChannels = 1;
+        nativeSampleRate.store(device->getCurrentSampleRate());
+        int ch = device->getActiveInputChannels().countNumberOfSetBits();
+        if (ch == 0) ch = 1;
+        nativeChannels.store(ch);
         DBG("audioDeviceAboutToStart: " + device->getName()
-            + " SR=" + juce::String(nativeSampleRate)
-            + " ch=" + juce::String(nativeChannels));
+            + " SR=" + juce::String(nativeSampleRate.load())
+            + " ch=" + juce::String(nativeChannels.load()));
     }
 
-    lastUpdateMs = 0;
+    lastUpdateMs.store(0);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -233,14 +236,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 
     // ---- Throttled UI notification (50 ms) ----
     const juce::int64 now = juce::Time::currentTimeMillis();
-    if (now - lastUpdateMs >= 50)
+    if (now - lastUpdateMs.load() >= 50)
     {
-        lastUpdateMs = now;
+        lastUpdateMs.store(now);
         triggerAsyncUpdate();
     }
 
     // ---- Recording pipeline ----
-    if (recording.load() && threadedWriter != nullptr)
+    if (recording.load())
     {
         // Downmix all input channels to mono, applying gain
         juce::AudioBuffer<float> monoBuffer(1, numSamples);
@@ -258,16 +261,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
             }
         }
 
-        threadedWriter->write(monoBuffer.getArrayOfReadPointers(), numSamples);
-
-        samplesInChunk += numSamples;
-
-        if (samplesInChunk >= samplesPerChunk)
+        // Try to acquire the writer lock; skip write if can't (chunk rotating)
+        const juce::SpinLock::ScopedTryLockType lock(writerLock);
+        if (lock.isLocked() && threadedWriter != nullptr)
         {
-            juce::MessageManager::callAsync([this]() {
-                if (recording.load())
-                    openNextChunk();
-            });
+            threadedWriter->write(monoBuffer.getArrayOfReadPointers(), numSamples);
+
+            auto newCount = samplesInChunk.fetch_add(numSamples) + numSamples;
+
+            if (newCount >= samplesPerChunk && !chunkRotationPending.exchange(true))
+            {
+                auto aliveFlag = alive;
+                juce::MessageManager::callAsync([this, aliveFlag]() {
+                    if (!aliveFlag->load()) return;
+                    if (recording.load())
+                        openNextChunk();
+                });
+            }
         }
     }
 }
@@ -279,9 +289,6 @@ void AudioEngine::handleAsyncUpdate()
 {
     float l = rmsL.load();
     float r = rmsR.load();
-    static int dbgCount = 0;
-    if (++dbgCount % 20 == 0) // log every ~1 second
-        DBG("RMS: L=" + juce::String(l, 4) + " R=" + juce::String(r, 4) + " listeners=" + juce::String(listeners.size()));
     listeners.call(&Listener::audioLevelsChanged, l, r);
 }
 
@@ -326,10 +333,10 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     // Retrieve current device parameters
     if (auto* device = deviceManager.getCurrentAudioDevice())
     {
-        nativeSampleRate = device->getCurrentSampleRate();
-        nativeChannels   = device->getActiveInputChannels().countNumberOfSetBits();
-        if (nativeChannels == 0)
-            nativeChannels = 1;
+        nativeSampleRate.store(device->getCurrentSampleRate());
+        int ch = device->getActiveInputChannels().countNumberOfSetBits();
+        if (ch == 0) ch = 1;
+        nativeChannels.store(ch);
     }
     else
     {
@@ -343,7 +350,7 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     chunkFolder.createDirectory();
 
     // 5 minutes per chunk
-    samplesPerChunk = (juce::int64)(5.0 * 60.0 * nativeSampleRate);
+    samplesPerChunk = (juce::int64)(5.0 * 60.0 * nativeSampleRate.load());
     chunkIndex = 0;
 
     if (!openNextChunk())
@@ -361,8 +368,11 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
 
 bool AudioEngine::openNextChunk()
 {
-    // Flush and close current chunk
-    threadedWriter.reset();
+    // Flush and close current chunk under the writer lock
+    {
+        const juce::SpinLock::ScopedLockType lock(writerLock);
+        threadedWriter.reset();
+    }
 
     if (writerThread != nullptr)
     {
@@ -381,6 +391,7 @@ bool AudioEngine::openNextChunk()
     if (fileStream == nullptr)
     {
         DBG("  Failed to create FileOutputStream for chunk: " + chunkFile.getFullPathName());
+        chunkRotationPending.store(false);
         return false;
     }
 
@@ -388,7 +399,7 @@ bool AudioEngine::openNextChunk()
 
     auto* writer = wavFormat.createWriterFor(
         fileStream.get(),
-        nativeSampleRate,
+        nativeSampleRate.load(),
         1,    // mono
         24,   // bit depth
         {},   // metadata
@@ -398,6 +409,7 @@ bool AudioEngine::openNextChunk()
     {
         DBG("  Failed to create WAV writer for chunk " + juce::String(chunkIndex));
         rawChunkStream = nullptr;
+        chunkRotationPending.store(false);
         return false;
     }
 
@@ -407,10 +419,14 @@ bool AudioEngine::openNextChunk()
     writerThread = std::make_unique<juce::TimeSliceThread>("BDG Audio Writer");
     writerThread->startThread();
 
-    threadedWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(
-        writer, *writerThread, 65536);
+    {
+        const juce::SpinLock::ScopedLockType lock(writerLock);
+        threadedWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(
+            writer, *writerThread, 65536);
+    }
 
-    samplesInChunk = 0;
+    samplesInChunk.store(0);
+    chunkRotationPending.store(false);
 
     DBG("  Opened chunk " + juce::String(chunkIndex) + ": " + chunkFile.getFullPathName());
     return true;
@@ -432,7 +448,7 @@ juce::File AudioEngine::concatenateChunks()
 
     auto* finalWriter = wavFormat.createWriterFor(
         outStream.get(),
-        nativeSampleRate,
+        nativeSampleRate.load(),
         1,    // mono
         24,   // bit depth
         {},   // metadata
@@ -486,8 +502,11 @@ juce::File AudioEngine::stopRecording()
     stopTimer();
     recording.store(false);
 
-    // Flush and close current chunk
-    threadedWriter.reset();
+    // Flush and close current chunk under writer lock
+    {
+        const juce::SpinLock::ScopedLockType lock(writerLock);
+        threadedWriter.reset();
+    }
 
     if (writerThread != nullptr)
     {
@@ -519,7 +538,7 @@ void AudioEngine::timerCallback()
     if (!recording.load()) return;
 
     auto freeBytes = chunkFolder.getBytesFreeOnVolume();
-    int bytesPerSec = (int)(nativeSampleRate * 3.0); // 24-bit mono = 3 bytes/sample
+    int bytesPerSec = (int)(nativeSampleRate.load() * 3.0); // 24-bit mono = 3 bytes/sample
     int remainingSec = (bytesPerSec > 0) ? (int)(freeBytes / bytesPerSec) : 9999;
     int remainingMin = remainingSec / 60;
 
@@ -529,7 +548,9 @@ void AudioEngine::timerCallback()
     {
         stopTimer();
         // Auto-stop on message thread
-        juce::MessageManager::callAsync([this]() {
+        auto aliveFlag = alive;
+        juce::MessageManager::callAsync([this, aliveFlag]() {
+            if (!aliveFlag->load()) return;
             if (recording.load())
             {
                 stopRecording();
@@ -688,18 +709,22 @@ void AudioEngine::processRecording(const juce::File& file,
     class DspThread : public juce::Thread
     {
     public:
-        DspThread(AudioEngine* e, juce::File f, bool norm, bool nr, bool comp, bool de)
+        DspThread(AudioEngine* e, juce::File f, bool norm, bool nr, bool comp, bool de,
+                  std::shared_ptr<std::atomic<bool>> aliveFlag)
             : juce::Thread("BDG DSP"),
               engine(e), file(std::move(f)),
-              doNormalize(norm), doNoiseReduction(nr), doCompressor(comp), doDeEsser(de) {}
+              doNormalize(norm), doNoiseReduction(nr), doCompressor(comp), doDeEsser(de),
+              alive(std::move(aliveFlag)) {}
 
         void run() override
         {
             auto emitStep = [this](const juce::String& step)
             {
                 auto* eng = engine;
-                juce::MessageManager::callAsync([eng, step]()
+                auto flag = alive;
+                juce::MessageManager::callAsync([eng, step, flag]()
                 {
+                    if (!flag->load()) return;
                     eng->listeners.call(&AudioEngine::Listener::dspStepChanged, step);
                 });
             };
@@ -707,8 +732,10 @@ void AudioEngine::processRecording(const juce::File& file,
             auto emitError = [this](const juce::String& msg)
             {
                 auto* eng = engine;
-                juce::MessageManager::callAsync([eng, msg]()
+                auto flag = alive;
+                juce::MessageManager::callAsync([eng, msg, flag]()
                 {
+                    if (!flag->load()) return;
                     eng->listeners.call(&AudioEngine::Listener::dspError, msg);
                 });
             };
@@ -717,8 +744,10 @@ void AudioEngine::processRecording(const juce::File& file,
             {
                 auto* eng = engine;
                 juce::File resultFile = f;
-                juce::MessageManager::callAsync([eng, resultFile]()
+                auto flag = alive;
+                juce::MessageManager::callAsync([eng, resultFile, flag]()
                 {
+                    if (!flag->load()) return;
                     eng->listeners.call(&AudioEngine::Listener::dspFinished, resultFile);
                 });
             };
@@ -747,8 +776,10 @@ void AudioEngine::processRecording(const juce::File& file,
             // 2) Notify DSP started
             {
                 auto* eng = engine;
-                juce::MessageManager::callAsync([eng]()
+                auto flag = alive;
+                juce::MessageManager::callAsync([eng, flag]()
                 {
+                    if (!flag->load()) return;
                     eng->listeners.call(&AudioEngine::Listener::dspStarted);
                 });
             }
@@ -841,9 +872,11 @@ void AudioEngine::processRecording(const juce::File& file,
         AudioEngine* engine;
         juce::File file;
         bool doNormalize, doNoiseReduction, doCompressor, doDeEsser;
+        std::shared_ptr<std::atomic<bool>> alive;
     };
 
     dspThread = std::make_unique<DspThread>(engine, file,
-                                            doNormalize, doNoiseReduction, doCompressor, doDeEsser);
+                                            doNormalize, doNoiseReduction, doCompressor, doDeEsser,
+                                            alive);
     dspThread->startThread();
 }

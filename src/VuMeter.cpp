@@ -19,12 +19,6 @@ void VuMeter::setLevels(float l, float r)
     levelL = rmsToDisplay(juce::jlimit(0.0f, 1.0f, l));
     levelR = rmsToDisplay(juce::jlimit(0.0f, 1.0f, r));
 
-    static int dbgCount = 0;
-    if (++dbgCount % 20 == 0)
-        DBG("VuMeter: in L=" + juce::String(l, 4) + " R=" + juce::String(r, 4)
-            + " display L=" + juce::String(levelL, 3) + " R=" + juce::String(levelR, 3)
-            + " bounds=" + juce::String(getWidth()) + "x" + juce::String(getHeight()));
-
     repaint();
 }
 

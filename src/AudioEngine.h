@@ -1,6 +1,8 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <atomic>
+#include <memory>
 
 class AudioEngine : public juce::AudioIODeviceCallback,
                     public juce::AsyncUpdater,
@@ -110,7 +112,7 @@ private:
     juce::ListenerList<Listener> listeners;
 
     // Throttle: fire update at most every 50 ms
-    juce::int64 lastUpdateMs{0};
+    std::atomic<juce::int64> lastUpdateMs{0};
 
     //==============================================================================
     // Recording members
@@ -121,15 +123,22 @@ private:
 
     juce::WavAudioFormat  wavFormat;
 
-    int    nativeChannels{0};
-    double nativeSampleRate{0.0};
+    std::atomic<int>    nativeChannels{0};
+    std::atomic<double> nativeSampleRate{0.0};
 
     // Chunk recording
     juce::File chunkFolder;
     int chunkIndex{0};
-    juce::int64 samplesInChunk{0};
+    std::atomic<juce::int64> samplesInChunk{0};
     juce::int64 samplesPerChunk{0}; // 5 min * sampleRate
     juce::FileOutputStream* rawChunkStream{nullptr}; // non-owning, for flush access
+    std::atomic<bool> chunkRotationPending{false};
+
+    // SpinLock to protect threadedWriter during chunk rotation
+    juce::SpinLock writerLock;
+
+    // Prevent dangling this in callAsync lambdas
+    std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);
 
     bool openNextChunk();
     juce::File concatenateChunks();
