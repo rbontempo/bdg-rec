@@ -1,0 +1,2 @@
+# Hashes of file build rules.
+303faacdd4448f5480451a7d5507043f BDG_REC_artefacts/JuceLibraryCode/BDG_REC/PkgInfo

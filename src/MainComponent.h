@@ -21,7 +21,7 @@ private:
     AudioEngine    audioEngine;
 
     HeaderBar      headerBar;
-    InputPanel     inputPanel;
+    InputPanel     inputPanel{audioEngine};
     RecordingPanel recordingPanel;
     OutputPanel    outputPanel;
 
