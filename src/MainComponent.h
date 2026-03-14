@@ -22,7 +22,7 @@ private:
 
     HeaderBar      headerBar;
     InputPanel     inputPanel{audioEngine};
-    RecordingPanel recordingPanel;
+    RecordingPanel recordingPanel{audioEngine};
     OutputPanel    outputPanel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
