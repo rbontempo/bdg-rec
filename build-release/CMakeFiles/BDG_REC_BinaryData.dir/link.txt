@@ -1,0 +1,2 @@
+/usr/bin/ar qc libBDG_REC_BinaryData.a CMakeFiles/BDG_REC_BinaryData.dir/juce_binarydata_BDG_REC_BinaryData/JuceLibraryCode/BinaryData1.cpp.o
+/usr/bin/ranlib libBDG_REC_BinaryData.a

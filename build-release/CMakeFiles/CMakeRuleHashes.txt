@@ -1,0 +1,3 @@
+# Hashes of file build rules.
+b29baca80a7a769f8dff1211d61c23ed BDG_REC_artefacts/JuceLibraryCode/BDG_REC/PkgInfo
+c612ccc29689662c8ae1d5d5365a8745 juce_binarydata_BDG_REC_BinaryData/JuceLibraryCode/BinaryData1.cpp
