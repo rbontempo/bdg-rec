@@ -1,0 +1,56 @@
+# BDG REC
+
+Audio recorder for podcasts and long recording sessions.
+
+Built with [JUCE](https://juce.com/) framework in C++.
+
+## Features
+
+- **Audio capture** with real-time VU metering
+- **WAV recording** — mono, 24-bit, native sample rate
+- **Crash-safe** — 5-minute chunk rotation, recover interrupted recordings
+- **Disk space monitoring** — warnings and auto-stop when disk is full
+- **DSP treatments** (post-recording):
+  - Normalize (RMS + brick-wall limiter)
+  - Noise Reduction (RNNoise neural network)
+  - Multiband Compressor (3 bands + auto makeup gain)
+  - De-Esser (4-8 kHz sibilance reduction)
+- **Bilingual** — Portuguese (pt-BR) and English
+- **Settings persistence** — device, folder, volume, treatments saved between sessions
+
+## Download
+
+Go to [Releases](../../releases) for the latest installers:
+- **macOS** — DMG (universal binary: Apple Silicon + Intel)
+- **Windows** — EXE (x64)
+
+## Build from source
+
+### Requirements
+- CMake 3.22+
+- macOS: Xcode Command Line Tools
+- Windows: Visual Studio 2022 with "Desktop development with C++"
+
+### macOS
+```bash
+./build-macos.sh
+```
+Output: `dist/BDG_REC_1.0.0_macOS.dmg`
+
+### Windows
+Open "Developer Command Prompt for VS 2022" and run:
+```bat
+build-windows.bat
+```
+Output: `dist\BDG_REC_1.0.0_Windows\BDG REC.exe`
+
+## Tech Stack
+
+- C++17
+- JUCE 8 (fetched automatically via CMake)
+- RNNoise (Xiph) for noise suppression
+- GPLv3 license
+
+## Screenshots
+
+*Coming soon*

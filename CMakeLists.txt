@@ -38,8 +38,8 @@ juce_add_gui_app(BDG_REC
     PRODUCT_NAME "BDG REC"
     COMPANY_NAME "BDG"
     BUNDLE_ID "com.bdg.rec"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns"
-    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/resources/BDG_ico.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/BDG_ico.png"
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "BDG REC precisa acessar o microfone para gravar audio."
 )
