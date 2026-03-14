@@ -12,6 +12,10 @@ public:
     public:
         virtual ~Listener() = default;
         virtual void audioLevelsChanged(float rmsL, float rmsR) = 0;
+        virtual void dspStarted() {}
+        virtual void dspStepChanged(const juce::String& step) {}
+        virtual void dspFinished(const juce::File& file) {}
+        virtual void dspError(const juce::String& error) {}
     };
 
     //==============================================================================
@@ -42,6 +46,13 @@ public:
     bool        startRecording(const juce::File& destFolder);
     juce::File  stopRecording();
     bool        isRecording() const;
+
+    //==============================================================================
+    // DSP processing (runs on background thread)
+    void processRecording(const juce::File& file,
+                          bool normalize,
+                          bool noiseReduction,
+                          bool compressor);
 
     //==============================================================================
     // AudioIODeviceCallback
@@ -83,6 +94,10 @@ private:
 
     int    nativeChannels{0};
     double nativeSampleRate{0.0};
+
+    //==============================================================================
+    // DSP background thread
+    std::unique_ptr<juce::Thread> dspThread;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

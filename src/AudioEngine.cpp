@@ -1,10 +1,18 @@
 #include "AudioEngine.h"
+#include "Dsp.h"
 
 //==============================================================================
 AudioEngine::AudioEngine() = default;
 
 AudioEngine::~AudioEngine()
 {
+    // Stop DSP thread if active
+    if (dspThread != nullptr)
+    {
+        dspThread->stopThread(10000);
+        dspThread.reset();
+    }
+
     // Stop recording if active
     if (recording.load())
         stopRecording();
@@ -250,4 +258,180 @@ juce::File AudioEngine::stopRecording()
 bool AudioEngine::isRecording() const
 {
     return recording.load();
+}
+
+//==============================================================================
+// DSP processing on background thread
+//==============================================================================
+void AudioEngine::processRecording(const juce::File& file,
+                                   bool doNormalize,
+                                   bool doNoiseReduction,
+                                   bool doCompressor)
+{
+    // If a previous DSP thread is still running, wait for it
+    if (dspThread != nullptr)
+    {
+        dspThread->stopThread(10000);
+        dspThread.reset();
+    }
+
+    // Capture what we need for the lambda
+    auto* engine = this;
+
+    class DspThread : public juce::Thread
+    {
+    public:
+        DspThread(AudioEngine* e, juce::File f, bool norm, bool nr, bool comp)
+            : juce::Thread("BDG DSP"),
+              engine(e), file(std::move(f)),
+              doNormalize(norm), doNoiseReduction(nr), doCompressor(comp) {}
+
+        void run() override
+        {
+            auto emitStep = [this](const juce::String& step)
+            {
+                auto* eng = engine;
+                juce::MessageManager::callAsync([eng, step]()
+                {
+                    eng->listeners.call(&AudioEngine::Listener::dspStepChanged, step);
+                });
+            };
+
+            // 1) Read the WAV file
+            juce::AudioFormatManager formatManager;
+            formatManager.registerBasicFormats();
+
+            std::unique_ptr<juce::AudioFormatReader> reader(
+                formatManager.createReaderFor(file));
+
+            if (reader == nullptr)
+            {
+                auto* eng = engine;
+                juce::String path = file.getFullPathName();
+                juce::MessageManager::callAsync([eng, path]()
+                {
+                    eng->listeners.call(&AudioEngine::Listener::dspError,
+                        juce::String("Failed to read file: ") + path);
+                });
+                return;
+            }
+
+            const int numSamples = static_cast<int>(reader->lengthInSamples);
+            const double sampleRate = reader->sampleRate;
+            const int bitsPerSample = reader->bitsPerSample;
+
+            juce::AudioBuffer<float> buffer(1, numSamples);
+            reader->read(&buffer, 0, numSamples, 0, true, false);
+            reader.reset(); // close the file
+
+            // 2) Notify DSP started
+            {
+                auto* eng = engine;
+                juce::MessageManager::callAsync([eng]()
+                {
+                    eng->listeners.call(&AudioEngine::Listener::dspStarted);
+                });
+            }
+
+            if (threadShouldExit()) return;
+
+            // 3) Normalize
+            if (doNormalize)
+            {
+                emitStep("normalize");
+                Dsp::normalize(buffer);
+            }
+
+            if (threadShouldExit()) return;
+
+            // 4) Noise reduction
+            if (doNoiseReduction)
+            {
+                emitStep("noise_reduction");
+                Dsp::noiseReduce(buffer, sampleRate);
+            }
+
+            if (threadShouldExit()) return;
+
+            // 5) Compressor
+            if (doCompressor)
+            {
+                emitStep("compressor");
+                Dsp::compress(buffer, sampleRate);
+            }
+
+            if (threadShouldExit()) return;
+
+            // 6) Final normalize if normalize was on AND we did other processing
+            if (doNormalize && (doNoiseReduction || doCompressor))
+            {
+                emitStep("normalize_final");
+                Dsp::normalize(buffer);
+            }
+
+            if (threadShouldExit()) return;
+
+            // 7) Save back to file
+            emitStep("saving");
+
+            juce::File tempFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_tmp.wav");
+
+            {
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::FileOutputStream> outStream(
+                    tempFile.createOutputStream());
+
+                if (outStream == nullptr)
+                {
+                    auto* eng = engine;
+                    juce::MessageManager::callAsync([eng]()
+                    {
+                        eng->listeners.call(&AudioEngine::Listener::dspError,
+                            juce::String("Failed to create output file"));
+                    });
+                    return;
+                }
+
+                auto* writer = wav.createWriterFor(
+                    outStream.get(), sampleRate, 1, bitsPerSample, {}, 0);
+
+                if (writer == nullptr)
+                {
+                    auto* eng = engine;
+                    juce::MessageManager::callAsync([eng]()
+                    {
+                        eng->listeners.call(&AudioEngine::Listener::dspError,
+                            juce::String("Failed to create WAV writer"));
+                    });
+                    return;
+                }
+
+                outStream.release(); // writer owns the stream now
+                writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
+                delete writer;
+            }
+
+            // Replace original with processed file
+            tempFile.moveFileTo(file);
+
+            // 8) Notify finished
+            {
+                auto* eng = engine;
+                juce::File resultFile = file;
+                juce::MessageManager::callAsync([eng, resultFile]()
+                {
+                    eng->listeners.call(&AudioEngine::Listener::dspFinished, resultFile);
+                });
+            }
+        }
+
+    private:
+        AudioEngine* engine;
+        juce::File file;
+        bool doNormalize, doNoiseReduction, doCompressor;
+    };
+
+    dspThread = std::make_unique<DspThread>(engine, file,
+                                            doNormalize, doNoiseReduction, doCompressor);
+    dspThread->startThread();
 }
