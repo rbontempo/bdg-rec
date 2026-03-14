@@ -4,6 +4,8 @@ MainComponent::MainComponent()
 {
     setLookAndFeel(&bdgLookAndFeel);
 
+    audioEngine.initialise();
+
     addAndMakeVisible(headerBar);
     addAndMakeVisible(inputPanel);
     addAndMakeVisible(recordingPanel);

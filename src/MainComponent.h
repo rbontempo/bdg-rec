@@ -5,6 +5,7 @@
 #include "InputPanel.h"
 #include "RecordingPanel.h"
 #include "OutputPanel.h"
+#include "AudioEngine.h"
 
 class MainComponent : public juce::Component
 {
@@ -16,6 +17,8 @@ public:
 
 private:
     BdgLookAndFeel bdgLookAndFeel;
+
+    AudioEngine    audioEngine;
 
     HeaderBar      headerBar;
     InputPanel     inputPanel;

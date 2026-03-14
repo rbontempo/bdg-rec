@@ -27,6 +27,7 @@ target_sources(BDG_REC PRIVATE
     src/InputPanel.cpp
     src/RecordingPanel.cpp
     src/OutputPanel.cpp
+    src/AudioEngine.cpp
 )
 
 target_compile_definitions(BDG_REC PRIVATE
