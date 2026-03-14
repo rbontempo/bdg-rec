@@ -91,10 +91,17 @@ target_link_libraries(BDG_REC PRIVATE
     juce::juce_recommended_warning_flags
 )
 
-# Copy app icon into bundle after build
-add_custom_command(TARGET BDG_REC POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-        "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns"
-        "$<TARGET_BUNDLE_DIR:BDG_REC>/Contents/Resources/Icon.icns"
-    COMMENT "Copying app icon"
-)
+# App icon
+if(APPLE)
+    add_custom_command(TARGET BDG_REC POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns"
+            "$<TARGET_BUNDLE_DIR:BDG_REC>/Contents/Resources/Icon.icns"
+        COMMENT "Copying app icon"
+    )
+elseif(WIN32)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/icon.rc"
+        "IDI_ICON1 ICON \"${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.ico\"\n"
+    )
+    target_sources(BDG_REC PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/icon.rc")
+endif()
