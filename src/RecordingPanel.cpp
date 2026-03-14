@@ -168,7 +168,7 @@ void RecordingPanel::paint(juce::Graphics& g)
     // "GRAVA\xc3\x87\xc3\x83" "O" label
     g.setFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
     g.setColour(BdgColours::textPrimary);
-    g.drawText(Strings::gravacao,
+    g.drawText(Strings::get().gravacao,
                juce::Rectangle<float>(padding + 18.0f, 0.0f, 100.0f, (float)headerH),
                juce::Justification::centredLeft, false);
 
@@ -202,7 +202,7 @@ void RecordingPanel::paintDiskSpaceBar(juce::Graphics& g, juce::Rectangle<int> a
     g.setFont(juce::FontOptions().withHeight(12.0f));
     g.setColour(juce::Colours::white.withAlpha(0.45f));
     const float labelW = 76.0f;
-    g.drawText(Strings::espacoLivre,
+    g.drawText(Strings::get().espacoLivre,
                juce::Rectangle<float>(textX, r.getY(), labelW, r.getHeight()),
                juce::Justification::centredLeft, false);
 

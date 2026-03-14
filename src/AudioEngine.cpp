@@ -299,7 +299,7 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
         if (deviceManager.getCurrentAudioDevice() == nullptr)
         {
             stopRecording();
-            listeners.call(&Listener::dspError, Strings::audioDesconectado);
+            listeners.call(&Listener::dspError, Strings::get().audioDesconectado);
         }
     }
 

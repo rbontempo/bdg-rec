@@ -60,10 +60,10 @@ private:
     };
 
     FolderButton folderButton;
-    ToggleRow    normalizeRow  { Strings::normalizar };
-    ToggleRow    noiseRow      { Strings::reducaoRuido };
-    ToggleRow    compressorRow { Strings::compressor };
-    ToggleRow    deEsserRow    { Strings::deEsser };
+    ToggleRow    normalizeRow  { Strings::get().normalizar };
+    ToggleRow    noiseRow      { Strings::get().reducaoRuido };
+    ToggleRow    compressorRow { Strings::get().compressor };
+    ToggleRow    deEsserRow    { Strings::get().deEsser };
 
     juce::File   destFolder;
 

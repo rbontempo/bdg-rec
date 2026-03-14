@@ -207,7 +207,7 @@ void OutputPanel::paint(juce::Graphics& g)
 
     g.setFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
     g.setColour(BdgColours::textPrimary);
-    g.drawText(Strings::saida, juce::Rectangle<float>(padding + 26.0f, 0.0f, 100.0f, headerH),
+    g.drawText(Strings::get().saida, juce::Rectangle<float>(padding + 26.0f, 0.0f, 100.0f, headerH),
                juce::Justification::centredLeft, false);
 
     g.setColour(BdgColours::border);
@@ -216,7 +216,7 @@ void OutputPanel::paint(juce::Graphics& g)
     // === FORMATO ===
     g.setFont(juce::FontOptions().withHeight(10.0f));
     g.setColour(BdgColours::textMuted);
-    g.drawText(Strings::formato, juce::Rectangle<float>(pos.contentX, pos.formatLabelY, pos.contentW, labelH),
+    g.drawText(Strings::get().formato, juce::Rectangle<float>(pos.contentX, pos.formatLabelY, pos.contentW, labelH),
                juce::Justification::centredLeft, false);
 
     {
@@ -234,7 +234,7 @@ void OutputPanel::paint(juce::Graphics& g)
     // === PASTA DE DESTINO ===
     g.setFont(juce::FontOptions().withHeight(10.0f));
     g.setColour(BdgColours::textMuted);
-    g.drawText(Strings::pastaDestino, juce::Rectangle<float>(pos.contentX, pos.folderLabelY, pos.contentW, labelH),
+    g.drawText(Strings::get().pastaDestino, juce::Rectangle<float>(pos.contentX, pos.folderLabelY, pos.contentW, labelH),
                juce::Justification::centredLeft, false);
 
     {
@@ -289,7 +289,7 @@ void OutputPanel::paint(juce::Graphics& g)
         // "TRATAMENTO" label
         g.setFont(juce::FontOptions().withHeight(10.0f).withStyle("Bold"));
         g.setColour(juce::Colours::white.withAlpha(0.50f));
-        g.drawText(Strings::tratamento,
+        g.drawText(Strings::get().tratamento,
                    juce::Rectangle<float>(sx + 16.0f, sy, pos.contentW - 26.0f, 12.0f),
                    juce::Justification::centredLeft, false);
 

@@ -141,7 +141,7 @@ void InputPanel::paint(juce::Graphics& g)
     juce::Font headerFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
     g.setFont(headerFont);
     g.setColour(BdgColours::textPrimary);
-    g.drawText(Strings::entrada,
+    g.drawText(Strings::get().entrada,
                juce::Rectangle<float>(padding + 22.0f, 0.0f, 100.0f, headerH),
                juce::Justification::centredLeft, false);
 
@@ -155,19 +155,19 @@ void InputPanel::paint(juce::Graphics& g)
     juce::Font sectionFont(juce::FontOptions().withHeight(labelFont));
     g.setFont(sectionFont);
     g.setColour(BdgColours::textMuted);
-    g.drawText(Strings::dispositivo,
+    g.drawText(Strings::get().dispositivo,
                juce::Rectangle<float>(pad, headerH + 12.0f, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredLeft, false);
 
     // ---- VU Meter label ----
     const float vuLabelY = (float)vuMeter.getY() - 18.0f;
-    g.drawText(Strings::nivel,
+    g.drawText(Strings::get().nivel,
                juce::Rectangle<float>(pad, vuLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredLeft, false);
 
     // ---- Volume section label + percentage ----
     const float volLabelY = (float)volumeSlider.getY() - 18.0f;
-    g.drawText(Strings::volume,
+    g.drawText(Strings::get().volume,
                juce::Rectangle<float>(pad, volLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredLeft, false);
 

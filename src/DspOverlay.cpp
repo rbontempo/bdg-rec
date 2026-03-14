@@ -4,11 +4,11 @@
 DspOverlay::DspOverlay()
 {
     // Build the step list (all steps; some may be hidden)
-    steps.add({ Strings::normalizacao,        true,  StepState::Pending });
-    steps.add({ Strings::reducaoRuidoStep,    true,  StepState::Pending });
-    steps.add({ Strings::compressor,          true,  StepState::Pending });
-    steps.add({ Strings::deEsser,             true,  StepState::Pending });
-    steps.add({ Strings::salvandoArquivo,     true,  StepState::Pending });
+    steps.add({ Strings::get().normalizacao,        true,  StepState::Pending });
+    steps.add({ Strings::get().reducaoRuidoStep,    true,  StepState::Pending });
+    steps.add({ Strings::get().compressor,          true,  StepState::Pending });
+    steps.add({ Strings::get().deEsser,             true,  StepState::Pending });
+    steps.add({ Strings::get().salvandoArquivo,     true,  StepState::Pending });
 
     setVisible(false);
     setInterceptsMouseClicks(true, true); // block all clicks behind
@@ -142,7 +142,7 @@ void DspOverlay::paint(juce::Graphics& g)
     {
         g.setFont(juce::FontOptions().withHeight(12.0f));
         g.setColour(juce::Colours::white.withAlpha(0.50f));
-        g.drawText(Strings::processandoAudio,
+        g.drawText(Strings::get().processandoAudio,
                    juce::Rectangle<float>(cx - 100.0f, y, 200.0f, subtitleH),
                    juce::Justification::centred, false);
     }

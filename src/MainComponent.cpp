@@ -45,10 +45,10 @@ MainComponent::MainComponent()
             auto options = juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::QuestionIcon)
                 .withTitle("BDG REC")
-                .withMessage(Strings::gravacaoAnterior)
-                .withButton("Recuperar")
-                .withButton("Descartar")
-                .withButton("Ignorar");
+                .withMessage(Strings::get().gravacaoAnterior)
+                .withButton(Strings::get().recuperar)
+                .withButton(Strings::get().descartar)
+                .withButton(Strings::get().ignorar);
 
             juce::AlertWindow::showAsync(options, [this, folder](int result)
             {
@@ -57,10 +57,10 @@ MainComponent::MainComponent()
                     auto recovered = audioEngine.recoverRecording(folder);
                     if (recovered.existsAsFile())
                         recordingPanel.getInlineWarning().show(
-                            "Recuperado: " + recovered.getFileName(), InlineWarning::Info);
+                            Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
                     else
                         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                            "BDG REC", Strings::falhaRecuperacao);
+                            "BDG REC", Strings::get().falhaRecuperacao);
                 }
                 else if (result == 2) // Descartar
                 {
@@ -144,7 +144,7 @@ void MainComponent::devicesChanged()
         isRecording = false;
         recordingPanel.stopRecording();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", Strings::dispositivoDesconectado);
+            "BDG REC", Strings::get().dispositivoDesconectado);
     }
 }
 
@@ -158,7 +158,7 @@ void MainComponent::diskSpaceWarning(int remainingMinutes)
         diskWarningShown = true;
         juce::MessageManager::callAsync([this, remainingMinutes]() {
             recordingPanel.getInlineWarning().show(
-                Strings::discoBaixo + juce::String(remainingMinutes) + "min.",
+                Strings::get().discoBaixo + juce::String(remainingMinutes) + "min.",
                 InlineWarning::Warning, 0); // no auto-hide during recording
         });
     }
@@ -171,7 +171,7 @@ void MainComponent::recordingAutoStopped()
         recordingPanel.stopRecording();
         recordingPanel.getInlineWarning().hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", Strings::gravacaoParadaDisco);
+            "BDG REC", Strings::get().gravacaoParadaDisco);
     });
 }
 
@@ -186,7 +186,7 @@ void MainComponent::handleRecordButtonClicked()
         // Task 19 – Validate device
         if (audioEngine.getCurrentInputDeviceName().isEmpty())
         {
-            recordingPanel.getInlineWarning().show(Strings::selecioneMic, InlineWarning::Warning);
+            recordingPanel.getInlineWarning().show(Strings::get().selecioneMic, InlineWarning::Warning);
             return;
         }
 
@@ -194,7 +194,7 @@ void MainComponent::handleRecordButtonClicked()
         juce::File folder = outputPanel.getDestFolder();
         if (!folder.exists() || !folder.isDirectory())
         {
-            recordingPanel.getInlineWarning().show(Strings::configurePasta, InlineWarning::Warning);
+            recordingPanel.getInlineWarning().show(Strings::get().configurePasta, InlineWarning::Warning);
             return;
         }
 
@@ -210,7 +210,7 @@ void MainComponent::handleRecordButtonClicked()
             if (remainingMin < 60)
             {
                 recordingPanel.getInlineWarning().show(
-                    Strings::discoInsuficiente + " (~" + juce::String(remainingMin) + Strings::liberarEspaco,
+                    Strings::get().discoInsuficiente + " (~" + juce::String(remainingMin) + Strings::get().liberarEspaco,
                     InlineWarning::Error);
                 return;
             }
@@ -230,7 +230,7 @@ void MainComponent::handleRecordButtonClicked()
         {
             DBG("Recording FAILED to start");
             juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                "BDG REC", Strings::falhaIniciar);
+                "BDG REC", Strings::get().falhaIniciar);
         }
     }
     else
@@ -257,20 +257,20 @@ void MainComponent::handleRecordButtonClicked()
             {
                 dspOverlay.hide();
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                    "BDG REC", juce::String("Erro no processamento: ") + e.what());
+                    "BDG REC", Strings::get().erroProcessamento + e.what());
             }
             catch (...)
             {
                 dspOverlay.hide();
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                    "BDG REC", "Erro desconhecido no processamento.");
+                    "BDG REC", Strings::get().erroDesconhecido);
             }
         }
         else if (lastRecordedFile.existsAsFile())
         {
             // No processing — report success inline
             recordingPanel.getInlineWarning().show(
-                "Salvo: " + lastRecordedFile.getFileName(), InlineWarning::Info);
+                Strings::get().salvo + lastRecordedFile.getFileName(), InlineWarning::Info);
         }
     }
 }
@@ -304,7 +304,7 @@ void MainComponent::dspFinished(const juce::File& file)
     {
         dspOverlay.hide();
         recordingPanel.getInlineWarning().show(
-            "Salvo: " + file.getFileName(), InlineWarning::Info);
+            Strings::get().salvo + file.getFileName(), InlineWarning::Info);
     });
 }
 
@@ -314,7 +314,7 @@ void MainComponent::dspError(const juce::String& error)
     {
         dspOverlay.hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", "Erro no processamento: " + error);
+            "BDG REC", Strings::get().erroProcessamento + error);
     });
 }
 
