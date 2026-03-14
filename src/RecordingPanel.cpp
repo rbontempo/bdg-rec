@@ -82,13 +82,9 @@ void RecordingPanel::diskSpaceWarning(int remainingMinutes)
 //==============================================================================
 void RecordingPanel::audioLevelsChanged(float rmsL, float rmsR)
 {
-    // Use average of L and R channels
     float rms = (rmsL + rmsR) * 0.5f;
-    juce::MessageManager::callAsync([this, rms]()
-    {
-        if (isRecording)
-            waveformDisplay.pushRmsSample(rms);
-    });
+    if (isRecording)
+        waveformDisplay.pushRmsSample(rms);
 }
 
 //==============================================================================

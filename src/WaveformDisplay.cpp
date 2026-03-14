@@ -32,7 +32,7 @@ void WaveformDisplay::pushRmsSample(float rms)
 
     rmsSamples.push_back(rms);
     while ((int)rmsSamples.size() > maxSamples)
-        rmsSamples.erase(rmsSamples.begin());
+        rmsSamples.pop_front();
 
     repaint();
 }

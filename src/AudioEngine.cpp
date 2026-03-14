@@ -114,12 +114,9 @@ float AudioEngine::getGain() const
 void AudioEngine::setMonitorEnabled(bool enabled)
 {
     monitorEnabled.store(enabled);
-
-    // Re-open device with output channels when monitoring is on
     auto setup = deviceManager.getAudioDeviceSetup();
     if (enabled)
     {
-        setup.outputDeviceName = setup.inputDeviceName;
         setup.useDefaultOutputChannels = true;
     }
     else
@@ -457,6 +454,7 @@ juce::File AudioEngine::concatenateChunks()
     if (finalWriter == nullptr)
     {
         DBG("  concatenateChunks: failed to create WAV writer");
+        finalFile.deleteFile();
         return {};
     }
 

@@ -39,15 +39,14 @@ void Dsp::normalize(juce::AudioBuffer<float>& buffer, double sampleRate)
     // Find peak envelope with lookahead
     std::vector<float> envelope(numSamples, 0.0f);
 
-    // Forward pass: find peaks
+    // Forward pass: find the max peak within the next `lookahead` samples
     for (int i = 0; i < numSamples; ++i)
-        envelope[i] = std::abs(data[i]);
-
-    // Backward pass: spread peaks back by lookahead amount
-    for (int i = numSamples - 2; i >= 0; --i)
     {
-        if (i + lookahead < numSamples)
-            envelope[i] = std::max(envelope[i], envelope[i + 1]);
+        float peak = std::abs(data[i]);
+        int end = std::min(i + lookahead, numSamples);
+        for (int j = i + 1; j < end; ++j)
+            peak = std::max(peak, std::abs(data[j]));
+        envelope[i] = peak;
     }
 
     // Apply gain reduction with release

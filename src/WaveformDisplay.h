@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "BdgColours.h"
+#include <deque>
 
 class WaveformDisplay : public juce::Component
 {
@@ -14,7 +15,7 @@ public:
 
 private:
     bool isRecording = false;
-    std::vector<float> rmsSamples;
+    std::deque<float> rmsSamples;
     juce::Image logoImage;
 
     juce::Colour vuColor(float rms) const;
