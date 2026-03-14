@@ -1,0 +1,87 @@
+name: Build BDG REC
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build
+        run: cmake --build build --target BDG_REC --config Release
+
+      - name: Create DMG
+        run: |
+          mkdir -p dist
+          DMG_DIR=$(mktemp -d)
+          cp -R "build/BDG_REC_artefacts/Release/BDG REC.app" "$DMG_DIR/"
+          ln -s /Applications "$DMG_DIR/Applications"
+          hdiutil create -volname "BDG REC" -srcfolder "$DMG_DIR" -ov -format UDZO "dist/BDG_REC_macOS.dmg"
+          rm -rf "$DMG_DIR"
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: BDG_REC_macOS
+          path: dist/BDG_REC_macOS.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --target BDG_REC --config Release
+
+      - name: Package
+        run: |
+          mkdir dist
+          copy "build\BDG_REC_artefacts\Release\BDG REC.exe" "dist\BDG_REC.exe"
+        shell: cmd
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: BDG_REC_Windows
+          path: dist/BDG_REC.exe
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BDG_REC_macOS
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BDG_REC_Windows
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            BDG_REC_macOS.dmg
+            BDG_REC.exe
+          generate_release_notes: true
