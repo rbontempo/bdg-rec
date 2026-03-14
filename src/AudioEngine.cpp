@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include "Dsp.h"
+#include "Strings.h"
 
 //==============================================================================
 AudioEngine::AudioEngine() = default;
@@ -298,8 +299,7 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
         if (deviceManager.getCurrentAudioDevice() == nullptr)
         {
             stopRecording();
-            listeners.call(&Listener::dspError,
-                           juce::String("Dispositivo de áudio desconectado durante gravação."));
+            listeners.call(&Listener::dspError, Strings::audioDesconectado);
         }
     }
 

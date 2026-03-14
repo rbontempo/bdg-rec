@@ -1,4 +1,5 @@
 #include "OutputPanel.h"
+#include "Strings.h"
 
 //==============================================================================
 // ToggleRow paint + click
@@ -117,10 +118,10 @@ namespace OutputLayout
     constexpr float labelGap  = 4.0f;   // gap between label and its box
     constexpr float boxH      = 36.0f;
     constexpr float sectionGap = 14.0f;
-    constexpr float rowH      = 30.0f;
+    constexpr float rowH      = 24.0f;
     constexpr float treatHeaderH = 30.0f;
     constexpr float treatSep   = 6.0f;
-    constexpr float treatPad   = 10.0f;
+    constexpr float treatPad   = 6.0f;
 }
 
 // Returns the Y position of each element for a given panel width
@@ -176,31 +177,37 @@ void OutputPanel::paint(juce::Graphics& g)
     g.drawRoundedRectangle(bounds.reduced(0.5f), corner, 1.0f);
 
     // === Header ===
-    // Headphones icon
+    // Export/save icon (arrow pointing out of a tray)
     {
-        const float iconW = 18.0f, iconH = 14.0f;
-        const float ix = padding, iy = (headerH - iconH) * 0.5f;
+        const float iconS = 14.0f;
+        const float ix = padding;
+        const float iy = (headerH - iconS) * 0.5f;
         g.setColour(BdgColours::primary);
 
-        juce::Path band;
-        const float arcCX = ix + iconW * 0.5f;
-        const float arcCY = iy + iconH * 0.6f;
-        const float arcR  = iconW * 0.45f;
-        band.addCentredArc(arcCX, arcCY, arcR, arcR, 0.0f,
-                           juce::MathConstants<float>::pi,
-                           2.0f * juce::MathConstants<float>::pi, true);
-        g.strokePath(band, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
-                     juce::PathStrokeType::rounded));
+        juce::Path icon;
+        // Tray (open top box)
+        icon.startNewSubPath(ix, iy + iconS * 0.4f);
+        icon.lineTo(ix, iy + iconS);
+        icon.lineTo(ix + iconS, iy + iconS);
+        icon.lineTo(ix + iconS, iy + iconS * 0.4f);
+        g.strokePath(icon, juce::PathStrokeType(1.5f, juce::PathStrokeType::mitered,
+                     juce::PathStrokeType::square));
 
-        const float cupW = 4.0f, cupH = 7.0f;
-        const float cupY = iy + iconH - cupH;
-        g.fillRoundedRectangle(ix, cupY, cupW, cupH, 1.5f);
-        g.fillRoundedRectangle(ix + iconW - cupW, cupY, cupW, cupH, 1.5f);
+        // Arrow pointing up (out of tray)
+        float cx = ix + iconS * 0.5f;
+        g.drawLine(cx, iy + iconS * 0.7f, cx, iy, 1.5f);
+        // Arrowhead
+        juce::Path arrow;
+        arrow.startNewSubPath(cx - 3.0f, iy + 4.0f);
+        arrow.lineTo(cx, iy);
+        arrow.lineTo(cx + 3.0f, iy + 4.0f);
+        g.strokePath(arrow, juce::PathStrokeType(1.5f, juce::PathStrokeType::mitered,
+                     juce::PathStrokeType::rounded));
     }
 
     g.setFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
     g.setColour(BdgColours::textPrimary);
-    g.drawText("OUTPUT", juce::Rectangle<float>(padding + 26.0f, 0.0f, 100.0f, headerH),
+    g.drawText(Strings::saida, juce::Rectangle<float>(padding + 26.0f, 0.0f, 100.0f, headerH),
                juce::Justification::centredLeft, false);
 
     g.setColour(BdgColours::border);
@@ -209,7 +216,7 @@ void OutputPanel::paint(juce::Graphics& g)
     // === FORMATO ===
     g.setFont(juce::FontOptions().withHeight(10.0f));
     g.setColour(BdgColours::textMuted);
-    g.drawText("FORMATO", juce::Rectangle<float>(pos.contentX, pos.formatLabelY, pos.contentW, labelH),
+    g.drawText(Strings::formato, juce::Rectangle<float>(pos.contentX, pos.formatLabelY, pos.contentW, labelH),
                juce::Justification::centredLeft, false);
 
     {
@@ -227,7 +234,7 @@ void OutputPanel::paint(juce::Graphics& g)
     // === PASTA DE DESTINO ===
     g.setFont(juce::FontOptions().withHeight(10.0f));
     g.setColour(BdgColours::textMuted);
-    g.drawText("PASTA DE DESTINO", juce::Rectangle<float>(pos.contentX, pos.folderLabelY, pos.contentW, labelH),
+    g.drawText(Strings::pastaDestino, juce::Rectangle<float>(pos.contentX, pos.folderLabelY, pos.contentW, labelH),
                juce::Justification::centredLeft, false);
 
     {
@@ -262,23 +269,27 @@ void OutputPanel::paint(juce::Graphics& g)
         g.setColour(BdgColours::border);
         g.drawRoundedRectangle(treatRect.reduced(0.5f), corner, 1.0f);
 
-        // Scissors icon
+        // Sliders/EQ icon (3 horizontal lines with dots at different positions)
         const float sx = pos.contentX + treatPad;
         const float sy = pos.treatY + 9.0f;
-        const float sz = 12.0f;
+        const float iconW = 12.0f;
+        const float lineGap = 4.0f;
         g.setColour(juce::Colours::white.withAlpha(0.50f));
-        juce::Path scissors;
-        scissors.startNewSubPath(sx, sy);
-        scissors.lineTo(sx + sz, sy + sz);
-        scissors.startNewSubPath(sx + sz, sy);
-        scissors.lineTo(sx, sy + sz);
-        g.strokePath(scissors, juce::PathStrokeType(1.5f, juce::PathStrokeType::beveled,
-                     juce::PathStrokeType::rounded));
+
+        for (int i = 0; i < 3; ++i)
+        {
+            float ly = sy + (float)i * lineGap;
+            // Line
+            g.drawLine(sx, ly, sx + iconW, ly, 1.2f);
+            // Dot (at different positions per line)
+            float dotX = sx + iconW * (i == 0 ? 0.7f : i == 1 ? 0.3f : 0.55f);
+            g.fillEllipse(dotX - 1.5f, ly - 1.5f, 3.0f, 3.0f);
+        }
 
         // "TRATAMENTO" label
         g.setFont(juce::FontOptions().withHeight(10.0f).withStyle("Bold"));
         g.setColour(juce::Colours::white.withAlpha(0.50f));
-        g.drawText("TRATAMENTO",
+        g.drawText(Strings::tratamento,
                    juce::Rectangle<float>(sx + 16.0f, sy, pos.contentW - 26.0f, 12.0f),
                    juce::Justification::centredLeft, false);
 

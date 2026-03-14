@@ -1,13 +1,14 @@
 #include "DspOverlay.h"
+#include "Strings.h"
 
 DspOverlay::DspOverlay()
 {
     // Build the step list (all steps; some may be hidden)
-    steps.add({ "Normalização",        true,  StepState::Pending });
-    steps.add({ "Redução de ruído",    true,  StepState::Pending });
-    steps.add({ "Compressor",          true,  StepState::Pending });
-    steps.add({ "De-Esser",           true,  StepState::Pending });
-    steps.add({ "Salvando arquivo",    true,  StepState::Pending });
+    steps.add({ Strings::normalizacao,        true,  StepState::Pending });
+    steps.add({ Strings::reducaoRuidoStep,    true,  StepState::Pending });
+    steps.add({ Strings::compressor,          true,  StepState::Pending });
+    steps.add({ Strings::deEsser,             true,  StepState::Pending });
+    steps.add({ Strings::salvandoArquivo,     true,  StepState::Pending });
 
     setVisible(false);
     setInterceptsMouseClicks(true, true); // block all clicks behind
@@ -137,11 +138,11 @@ void DspOverlay::paint(juce::Graphics& g)
     }
     y += titleH;
 
-    // --- "Processando áudio" ---
+    // --- juce::String::fromUTF8("Processando \xc3\xa1" "udio") ---
     {
         g.setFont(juce::FontOptions().withHeight(12.0f));
         g.setColour(juce::Colours::white.withAlpha(0.50f));
-        g.drawText("Processando áudio",
+        g.drawText(Strings::processandoAudio,
                    juce::Rectangle<float>(cx - 100.0f, y, 200.0f, subtitleH),
                    juce::Justification::centred, false);
     }

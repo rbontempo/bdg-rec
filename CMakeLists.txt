@@ -72,6 +72,7 @@ target_compile_definitions(BDG_REC PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
+target_compile_options(BDG_REC PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
 target_include_directories(BDG_REC PRIVATE external/rnnoise/include)
 
 target_link_libraries(BDG_REC PRIVATE

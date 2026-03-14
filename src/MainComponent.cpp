@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Strings.h"
 
 MainComponent::MainComponent()
 {
@@ -44,7 +45,7 @@ MainComponent::MainComponent()
             auto options = juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::QuestionIcon)
                 .withTitle("BDG REC")
-                .withMessage("Gravação anterior encontrada. Deseja recuperar?")
+                .withMessage(Strings::gravacaoAnterior)
                 .withButton("Recuperar")
                 .withButton("Descartar")
                 .withButton("Ignorar");
@@ -59,7 +60,7 @@ MainComponent::MainComponent()
                             "Recuperado: " + recovered.getFileName(), InlineWarning::Info);
                     else
                         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                            "BDG REC", "Falha na recuperação.");
+                            "BDG REC", Strings::falhaRecuperacao);
                 }
                 else if (result == 2) // Descartar
                 {
@@ -143,7 +144,7 @@ void MainComponent::devicesChanged()
         isRecording = false;
         recordingPanel.stopRecording();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", "Dispositivo desconectado. Gravação interrompida.");
+            "BDG REC", Strings::dispositivoDesconectado);
     }
 }
 
@@ -157,7 +158,7 @@ void MainComponent::diskSpaceWarning(int remainingMinutes)
         diskWarningShown = true;
         juce::MessageManager::callAsync([this, remainingMinutes]() {
             recordingPanel.getInlineWarning().show(
-                "Espaço em disco baixo. Restam ~" + juce::String(remainingMinutes) + "min.",
+                Strings::discoBaixo + juce::String(remainingMinutes) + "min.",
                 InlineWarning::Warning, 0); // no auto-hide during recording
         });
     }
@@ -170,7 +171,7 @@ void MainComponent::recordingAutoStopped()
         recordingPanel.stopRecording();
         recordingPanel.getInlineWarning().hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", "Gravação parada automaticamente: disco quase cheio.");
+            "BDG REC", Strings::gravacaoParadaDisco);
     });
 }
 
@@ -185,7 +186,7 @@ void MainComponent::handleRecordButtonClicked()
         // Task 19 – Validate device
         if (audioEngine.getCurrentInputDeviceName().isEmpty())
         {
-            recordingPanel.getInlineWarning().show("Selecione um microfone.", InlineWarning::Warning);
+            recordingPanel.getInlineWarning().show(Strings::selecioneMic, InlineWarning::Warning);
             return;
         }
 
@@ -193,7 +194,7 @@ void MainComponent::handleRecordButtonClicked()
         juce::File folder = outputPanel.getDestFolder();
         if (!folder.exists() || !folder.isDirectory())
         {
-            recordingPanel.getInlineWarning().show("Configure a pasta de destino.", InlineWarning::Warning);
+            recordingPanel.getInlineWarning().show(Strings::configurePasta, InlineWarning::Warning);
             return;
         }
 
@@ -209,7 +210,7 @@ void MainComponent::handleRecordButtonClicked()
             if (remainingMin < 60)
             {
                 recordingPanel.getInlineWarning().show(
-                    "Espaço insuficiente (~" + juce::String(remainingMin) + "min). Libere espaco.",
+                    Strings::discoInsuficiente + " (~" + juce::String(remainingMin) + Strings::liberarEspaco,
                     InlineWarning::Error);
                 return;
             }
@@ -229,7 +230,7 @@ void MainComponent::handleRecordButtonClicked()
         {
             DBG("Recording FAILED to start");
             juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                "BDG REC", "Falha ao iniciar gravação.");
+                "BDG REC", Strings::falhaIniciar);
         }
     }
     else

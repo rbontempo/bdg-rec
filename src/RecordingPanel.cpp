@@ -1,4 +1,5 @@
 #include "RecordingPanel.h"
+#include "Strings.h"
 
 RecordingPanel::RecordingPanel(AudioEngine& engine)
     : audioEngine(engine)
@@ -164,10 +165,10 @@ void RecordingPanel::paint(juce::Graphics& g)
         g.fillEllipse(ix, iy, iconSize, iconSize);
     }
 
-    // "GRAVAÇÃO" label
+    // "GRAVA\xc3\x87\xc3\x83" "O" label
     g.setFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
     g.setColour(BdgColours::textPrimary);
-    g.drawText("GRAVAÇÃO",
+    g.drawText(Strings::gravacao,
                juce::Rectangle<float>(padding + 18.0f, 0.0f, 100.0f, (float)headerH),
                juce::Justification::centredLeft, false);
 
@@ -196,12 +197,12 @@ void RecordingPanel::paintDiskSpaceBar(juce::Graphics& g, juce::Rectangle<int> a
         g.fillRoundedRectangle(iconX + 3.0f, iconY, 8.0f, 5.0f, 1.0f);
     }
 
-    // "Espaço livre:" text
+    // "Espa\xc3\xa7" "o livre:" text
     const float textX = r.getX() + 20.0f;
     g.setFont(juce::FontOptions().withHeight(12.0f));
     g.setColour(juce::Colours::white.withAlpha(0.45f));
     const float labelW = 76.0f;
-    g.drawText("Espaço livre:",
+    g.drawText(Strings::espacoLivre,
                juce::Rectangle<float>(textX, r.getY(), labelW, r.getHeight()),
                juce::Justification::centredLeft, false);
 

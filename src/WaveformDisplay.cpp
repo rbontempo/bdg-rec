@@ -1,5 +1,6 @@
 #include "WaveformDisplay.h"
 #include "BinaryData.h"
+#include "Strings.h"
 
 WaveformDisplay::WaveformDisplay()
 {
@@ -66,7 +67,7 @@ void WaveformDisplay::paint(juce::Graphics& g)
         // "Pronto para gravar" text below logo
         g.setColour(juce::Colours::white.withAlpha(0.35f));
         g.setFont(juce::FontOptions().withHeight(12.0f));
-        g.drawText("Pronto para gravar",
+        g.drawText(Strings::prontoGravar,
                    bounds.removeFromBottom(30.0f),
                    juce::Justification::centred, false);
     }

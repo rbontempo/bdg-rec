@@ -1,4 +1,5 @@
 #include "InputPanel.h"
+#include "Strings.h"
 
 //==============================================================================
 InputPanel::InputPanel(AudioEngine& engine)
@@ -109,50 +110,38 @@ void InputPanel::paint(juce::Graphics& g)
     const float headerH = 40.0f;
     const float padding = 14.0f;
 
-    // Mic icon (simple path: capsule body + stand arm + base)
+    // Arrow-into-box icon (signal entering)
     {
-        const float iconW = 14.0f;
-        const float iconH = 18.0f;
+        const float iconS = 14.0f;
         const float ix = padding;
-        const float iy = (headerH - iconH) * 0.5f;
-
+        const float iy = (headerH - iconS) * 0.5f;
         g.setColour(BdgColours::primary);
 
-        // Mic capsule (rounded rect)
-        juce::Path mic;
-        const float capW = iconW * 0.6f;
-        const float capH = iconH * 0.55f;
-        const float capX = ix + (iconW - capW) * 0.5f;
-        mic.addRoundedRectangle(capX, iy, capW, capH, capW * 0.5f);
-        g.fillPath(mic);
+        // Box (open left side)
+        juce::Path box;
+        box.startNewSubPath(ix + iconS * 0.35f, iy);
+        box.lineTo(ix + iconS, iy);
+        box.lineTo(ix + iconS, iy + iconS);
+        box.lineTo(ix + iconS * 0.35f, iy + iconS);
+        g.strokePath(box, juce::PathStrokeType(1.5f, juce::PathStrokeType::mitered,
+                     juce::PathStrokeType::square));
 
-        // Mic arm
-        juce::Path arm;
-        const float armCX = ix + iconW * 0.5f;
-        const float armTopY = iy + capH * 0.7f;
-        const float armR = iconW * 0.4f;
-        arm.addCentredArc(armCX, armTopY, armR, armR, 0.0f,
-                          juce::MathConstants<float>::pi,
-                          2.0f * juce::MathConstants<float>::pi, true);
-        g.strokePath(arm, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
-                                               juce::PathStrokeType::rounded));
-
-        // Stand
-        const float standX   = armCX;
-        const float standTop = armTopY + armR;
-        const float standBot = iy + iconH - 1.0f;
-        g.drawLine(standX, standTop, standX, standBot, 1.5f);
-
-        // Base line
-        const float baseHalfW = iconW * 0.35f;
-        g.drawLine(standX - baseHalfW, standBot, standX + baseHalfW, standBot, 1.5f);
+        // Arrow pointing right (into box)
+        float cy = iy + iconS * 0.5f;
+        g.drawLine(ix, cy, ix + iconS * 0.7f, cy, 1.5f);
+        juce::Path arrow;
+        arrow.startNewSubPath(ix + iconS * 0.5f, cy - 3.0f);
+        arrow.lineTo(ix + iconS * 0.7f, cy);
+        arrow.lineTo(ix + iconS * 0.5f, cy + 3.0f);
+        g.strokePath(arrow, juce::PathStrokeType(1.5f, juce::PathStrokeType::mitered,
+                     juce::PathStrokeType::rounded));
     }
 
-    // "INPUT" label
+    // "ENTRADA" label
     juce::Font headerFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
     g.setFont(headerFont);
     g.setColour(BdgColours::textPrimary);
-    g.drawText("INPUT",
+    g.drawText(Strings::entrada,
                juce::Rectangle<float>(padding + 22.0f, 0.0f, 100.0f, headerH),
                juce::Justification::centredLeft, false);
 
@@ -166,19 +155,19 @@ void InputPanel::paint(juce::Graphics& g)
     juce::Font sectionFont(juce::FontOptions().withHeight(labelFont));
     g.setFont(sectionFont);
     g.setColour(BdgColours::textMuted);
-    g.drawText("DISPOSITIVO",
+    g.drawText(Strings::dispositivo,
                juce::Rectangle<float>(pad, headerH + 12.0f, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredLeft, false);
 
     // ---- VU Meter label ----
     const float vuLabelY = (float)vuMeter.getY() - 18.0f;
-    g.drawText("NÍVEL",
+    g.drawText(Strings::nivel,
                juce::Rectangle<float>(pad, vuLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredLeft, false);
 
     // ---- Volume section label + percentage ----
     const float volLabelY = (float)volumeSlider.getY() - 18.0f;
-    g.drawText("VOLUME",
+    g.drawText(Strings::volume,
                juce::Rectangle<float>(pad, volLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredLeft, false);
 

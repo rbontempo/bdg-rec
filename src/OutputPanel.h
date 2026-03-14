@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "BdgColours.h"
+#include "Strings.h"
 
 class OutputPanel : public juce::Component
 {
@@ -32,10 +33,10 @@ private:
     // Folder button (clickable)
     struct FolderButton : public juce::Component
     {
+        FolderButton() { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
         std::function<void()> onClick;
         void mouseDown(const juce::MouseEvent&) override
         {
-            DBG("FolderButton clicked!");
             if (onClick) onClick();
         }
         void paint(juce::Graphics& g) override
@@ -59,10 +60,10 @@ private:
     };
 
     FolderButton folderButton;
-    ToggleRow    normalizeRow  { "Normalizar" };
-    ToggleRow    noiseRow      { "Redução de ruído" };
-    ToggleRow    compressorRow { "Compressor" };
-    ToggleRow    deEsserRow    { "De-Esser" };
+    ToggleRow    normalizeRow  { Strings::normalizar };
+    ToggleRow    noiseRow      { Strings::reducaoRuido };
+    ToggleRow    compressorRow { Strings::compressor };
+    ToggleRow    deEsserRow    { Strings::deEsser };
 
     juce::File   destFolder;
 
