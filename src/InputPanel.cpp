@@ -45,14 +45,6 @@ InputPanel::InputPanel(AudioEngine& engine)
     };
     addAndMakeVisible(volumeSlider);
 
-    // ---- Monitor Toggle ----
-    monitorButton.setButtonText("Monitorar");
-    monitorButton.setToggleState(false, juce::dontSendNotification);
-    monitorButton.onClick = [this]()
-    {
-        audioEngine.setMonitorEnabled(monitorButton.getToggleState());
-    };
-    addAndMakeVisible(monitorButton);
 }
 
 InputPanel::~InputPanel()
@@ -196,36 +188,6 @@ void InputPanel::paint(juce::Graphics& g)
                juce::Rectangle<float>(pad, volLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredRight, false);
 
-    // ---- Monitor section top border ----
-    const float monitorY = (float)monitorButton.getY() - 10.0f;
-    g.setColour(BdgColours::border);
-    g.drawHorizontalLine((int)monitorY, bounds.getX() + 1.0f, bounds.getRight() - 1.0f);
-
-    // ---- Headphones icon (left of monitor button area) ----
-    {
-        g.setColour(BdgColours::textMuted);
-        const float iconSize = 14.0f;
-        const float iconX    = pad;
-        const float iconY    = (float)monitorButton.getY() + (monitorButton.getHeight() - iconSize) * 0.5f;
-
-        // Draw headphone: arc on top, two ear cups
-        juce::Path hp;
-        const float hpCX = iconX + iconSize * 0.5f;
-        const float hpCY = iconY + iconSize * 0.55f;
-        const float hpR  = iconSize * 0.42f;
-        // Headband arc
-        hp.addCentredArc(hpCX, hpCY, hpR, hpR * 0.9f, 0.0f,
-                         juce::MathConstants<float>::pi,
-                         2.0f * juce::MathConstants<float>::pi, true);
-        g.strokePath(hp, juce::PathStrokeType(1.5f));
-
-        // Left ear cup
-        g.fillRoundedRectangle(iconX, iconY + iconSize * 0.35f,
-                               iconSize * 0.22f, iconSize * 0.4f, 2.0f);
-        // Right ear cup
-        g.fillRoundedRectangle(iconX + iconSize * 0.78f, iconY + iconSize * 0.35f,
-                               iconSize * 0.22f, iconSize * 0.4f, 2.0f);
-    }
 }
 
 //==============================================================================
@@ -260,12 +222,4 @@ void InputPanel::resized()
     volumeSlider.setBounds(pad + 20, y, innerW - 20, 24);
     y += 24 + 8;
 
-    // Monitor toggle: pinned to bottom
-    const int monitorH  = 36;
-    const int monitorY  = getHeight() - monitorH - pad;
-    const int toggleH   = 24;
-
-    // Position toggle on the right, "Monitorar" text is part of button
-    monitorButton.setBounds(pad + 20, monitorY + (monitorH - toggleH) / 2,
-                            innerW - 20, toggleH);
 }

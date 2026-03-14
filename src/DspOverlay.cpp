@@ -6,7 +6,6 @@ DspOverlay::DspOverlay()
     steps.add({ "Normalizacao",        true,  StepState::Pending });
     steps.add({ "Reducao de ruido",    true,  StepState::Pending });
     steps.add({ "Compressor",          true,  StepState::Pending });
-    steps.add({ "Normalizacao final",  true,  StepState::Pending });
     steps.add({ "Salvando arquivo",    true,  StepState::Pending });
 
     setVisible(false);
@@ -30,13 +29,11 @@ void DspOverlay::show(bool normalize, bool noiseReduction, bool compressor)
     // steps[0] = "Normalizacao"       -> visible only if normalize
     // steps[1] = "Reducao de ruido"   -> visible only if noiseReduction
     // steps[2] = "Compressor"         -> visible only if compressor
-    // steps[3] = "Normalizacao final" -> visible only if any treatment is on
-    // steps[4] = "Salvando arquivo"   -> always visible
+    // steps[3] = "Salvando arquivo"   -> always visible
     steps.getReference(0).enabled = normalize;
     steps.getReference(1).enabled = noiseReduction;
     steps.getReference(2).enabled = compressor;
-    steps.getReference(3).enabled = (normalize || noiseReduction || compressor);
-    steps.getReference(4).enabled = true;
+    steps.getReference(3).enabled = true;
 
     spinAngle  = 0.0f;
     pulseAlpha = 1.0f;

@@ -27,12 +27,17 @@ AudioEngine::~AudioEngine()
 void AudioEngine::initialise()
 {
     // Request 2 input channels, 0 output channels
-    juce::AudioDeviceManager::AudioDeviceSetup setup;
-    deviceManager.initialiseWithDefaultDevices(2, 0);
-    deviceManager.addAudioCallback(this);
+    auto error = deviceManager.initialiseWithDefaultDevices(2, 0);
+    if (error.isNotEmpty())
+        DBG("AudioEngine::initialise error: " + error);
 
-    // Listen for device changes (hot-plug) — Task 19
+    deviceManager.addAudioCallback(this);
     deviceManager.addChangeListener(this);
+
+    if (auto* dev = deviceManager.getCurrentAudioDevice())
+        DBG("AudioEngine::initialise OK: " + dev->getName());
+    else
+        DBG("AudioEngine::initialise: no device opened by default");
 }
 
 //==============================================================================
@@ -40,8 +45,23 @@ juce::StringArray AudioEngine::getInputDevices()
 {
     juce::StringArray names;
 
+    // Try current device type first
     if (auto* type = deviceManager.getCurrentDeviceTypeObject())
-        names = type->getDeviceNames(true); // true = input devices
+    {
+        type->scanForDevices();
+        names = type->getDeviceNames(true);
+    }
+
+    // Fallback: iterate all available device types
+    if (names.isEmpty())
+    {
+        for (auto* type : deviceManager.getAvailableDeviceTypes())
+        {
+            type->scanForDevices();
+            auto devNames = type->getDeviceNames(true);
+            names.addArray(devNames);
+        }
+    }
 
     return names;
 }
@@ -58,7 +78,22 @@ void AudioEngine::setInputDevice(const juce::String& name)
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.inputDeviceName  = name;
     setup.useDefaultInputChannels = true;
-    deviceManager.setAudioDeviceSetup(setup, true);
+    setup.inputChannels.setRange(0, 2, true); // ensure at least 2 input channels requested
+    setup.sampleRate = 0; // use device default
+    setup.bufferSize = 0; // use device default
+    auto error = deviceManager.setAudioDeviceSetup(setup, true);
+
+    if (error.isNotEmpty())
+        DBG("setInputDevice error: " + error);
+    else
+        DBG("setInputDevice OK: " + name);
+
+    if (auto* dev = deviceManager.getCurrentAudioDevice())
+        DBG("  Active device: " + dev->getName()
+            + " SR=" + juce::String(dev->getCurrentSampleRate())
+            + " inputs=" + juce::String(dev->getActiveInputChannels().countNumberOfSetBits()));
+    else
+        DBG("  No active device after setInputDevice!");
 }
 
 //==============================================================================
@@ -122,7 +157,10 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
         nativeSampleRate = device->getCurrentSampleRate();
         nativeChannels   = device->getActiveInputChannels().countNumberOfSetBits();
         if (nativeChannels == 0)
-            nativeChannels = 1; // fallback
+            nativeChannels = 1;
+        DBG("audioDeviceAboutToStart: " + device->getName()
+            + " SR=" + juce::String(nativeSampleRate)
+            + " ch=" + juce::String(nativeChannels));
     }
 
     lastUpdateMs = 0;
@@ -228,7 +266,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 //==============================================================================
 void AudioEngine::handleAsyncUpdate()
 {
-    listeners.call(&Listener::audioLevelsChanged, rmsL.load(), rmsR.load());
+    float l = rmsL.load();
+    float r = rmsR.load();
+    static int dbgCount = 0;
+    if (++dbgCount % 20 == 0) // log every ~1 second
+        DBG("RMS: L=" + juce::String(l, 4) + " R=" + juce::String(r, 4) + " listeners=" + juce::String(listeners.size()));
+    listeners.call(&Listener::audioLevelsChanged, l, r);
 }
 
 //==============================================================================
@@ -259,8 +302,12 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
 //==============================================================================
 bool AudioEngine::startRecording(const juce::File& destFolder)
 {
+    DBG("AudioEngine::startRecording destFolder=" + destFolder.getFullPathName());
     if (recording.load())
-        return false; // already recording
+    {
+        DBG("  Already recording, returning false");
+        return false;
+    }
 
     // Make sure destination folder exists
     if (!destFolder.isDirectory())
@@ -291,7 +338,10 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
         currentRecordingFile.createOutputStream());
 
     if (fileStream == nullptr)
+    {
+        DBG("  Failed to create FileOutputStream for: " + currentRecordingFile.getFullPathName());
         return false;
+    }
 
     // Create a WAV writer: mono, nativeSampleRate, 24-bit
     auto* writer = wavFormat.createWriterFor(
@@ -303,7 +353,11 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
         0);   // quality option index
 
     if (writer == nullptr)
+    {
+        DBG("  Failed to create WAV writer. SR=" + juce::String(nativeSampleRate) + " ch=" + juce::String(nativeChannels));
         return false;
+    }
+    DBG("  WAV writer created. SR=" + juce::String(nativeSampleRate) + " file=" + currentRecordingFile.getFullPathName());
 
     // Transfer ownership of the stream to the writer
     fileStream.release();
@@ -377,6 +431,25 @@ void AudioEngine::processRecording(const juce::File& file,
                 });
             };
 
+            auto emitError = [this](const juce::String& msg)
+            {
+                auto* eng = engine;
+                juce::MessageManager::callAsync([eng, msg]()
+                {
+                    eng->listeners.call(&AudioEngine::Listener::dspError, msg);
+                });
+            };
+
+            auto emitFinish = [this](const juce::File& f)
+            {
+                auto* eng = engine;
+                juce::File resultFile = f;
+                juce::MessageManager::callAsync([eng, resultFile]()
+                {
+                    eng->listeners.call(&AudioEngine::Listener::dspFinished, resultFile);
+                });
+            };
+
             // 1) Read the WAV file
             juce::AudioFormatManager formatManager;
             formatManager.registerBasicFormats();
@@ -386,13 +459,7 @@ void AudioEngine::processRecording(const juce::File& file,
 
             if (reader == nullptr)
             {
-                auto* eng = engine;
-                juce::String path = file.getFullPathName();
-                juce::MessageManager::callAsync([eng, path]()
-                {
-                    eng->listeners.call(&AudioEngine::Listener::dspError,
-                        juce::String("Failed to read file: ") + path);
-                });
+                emitError("Failed to read file: " + file.getFullPathName());
                 return;
             }
 
@@ -413,25 +480,30 @@ void AudioEngine::processRecording(const juce::File& file,
                 });
             }
 
-            if (threadShouldExit()) return;
+            if (threadShouldExit()) { emitError("Cancelado"); return; }
 
             // 3) Normalize
             if (doNormalize)
             {
+                DBG("DSP: running normalize on " + juce::String(numSamples) + " samples");
                 emitStep("normalize");
                 Dsp::normalize(buffer);
+                DBG("DSP: normalize done");
             }
 
-            if (threadShouldExit()) return;
+            if (threadShouldExit()) { emitError("Cancelado"); return; }
 
             // 4) Noise reduction
             if (doNoiseReduction)
             {
+                DBG("DSP: running noiseReduce on " + juce::String(numSamples) + " samples, SR=" + juce::String(sampleRate)
+                    + " (" + juce::String(numSamples / sampleRate, 1) + "s)");
                 emitStep("noise_reduction");
                 Dsp::noiseReduce(buffer, sampleRate);
+                DBG("DSP: noiseReduce done");
             }
 
-            if (threadShouldExit()) return;
+            if (threadShouldExit()) { emitError("Cancelado"); return; }
 
             // 5) Compressor
             if (doCompressor)
@@ -440,18 +512,12 @@ void AudioEngine::processRecording(const juce::File& file,
                 Dsp::compress(buffer, sampleRate);
             }
 
-            if (threadShouldExit()) return;
+            if (threadShouldExit()) { emitError("Cancelado"); return; }
 
-            // 6) Final normalize if normalize was on AND we did other processing
-            if (doNormalize && (doNoiseReduction || doCompressor))
-            {
-                emitStep("normalize_final");
-                Dsp::normalize(buffer);
-            }
-
-            if (threadShouldExit()) return;
+            if (threadShouldExit()) { emitError("Cancelado"); return; }
 
             // 7) Save back to file
+            DBG("DSP: saving to " + file.getFullPathName());
             emitStep("saving");
 
             juce::File tempFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_tmp.wav");
@@ -463,12 +529,7 @@ void AudioEngine::processRecording(const juce::File& file,
 
                 if (outStream == nullptr)
                 {
-                    auto* eng = engine;
-                    juce::MessageManager::callAsync([eng]()
-                    {
-                        eng->listeners.call(&AudioEngine::Listener::dspError,
-                            juce::String("Failed to create output file"));
-                    });
+                    emitError("Failed to create output file");
                     return;
                 }
 
@@ -477,12 +538,7 @@ void AudioEngine::processRecording(const juce::File& file,
 
                 if (writer == nullptr)
                 {
-                    auto* eng = engine;
-                    juce::MessageManager::callAsync([eng]()
-                    {
-                        eng->listeners.call(&AudioEngine::Listener::dspError,
-                            juce::String("Failed to create WAV writer"));
-                    });
+                    emitError("Failed to create WAV writer");
                     return;
                 }
 
@@ -492,17 +548,11 @@ void AudioEngine::processRecording(const juce::File& file,
             }
 
             // Replace original with processed file
-            tempFile.moveFileTo(file);
+            bool moved = tempFile.moveFileTo(file);
+            DBG("DSP: moveFileTo " + juce::String(moved ? "OK" : "FAILED"));
 
             // 8) Notify finished
-            {
-                auto* eng = engine;
-                juce::File resultFile = file;
-                juce::MessageManager::callAsync([eng, resultFile]()
-                {
-                    eng->listeners.call(&AudioEngine::Listener::dspFinished, resultFile);
-                });
-            }
+            emitFinish(file);
         }
 
     private:

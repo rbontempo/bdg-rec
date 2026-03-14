@@ -31,8 +31,16 @@ private:
     struct FolderButton : public juce::Component
     {
         std::function<void()> onClick;
-        void mouseUp(const juce::MouseEvent&) override { if (onClick) onClick(); }
-        void mouseDrag(const juce::MouseEvent&) override {}
+        void mouseDown(const juce::MouseEvent&) override
+        {
+            DBG("FolderButton clicked!");
+            if (onClick) onClick();
+        }
+        void paint(juce::Graphics& g) override
+        {
+            // Transparent but needs to be "opaque" enough for hit testing
+        }
+        bool hitTest(int, int) override { return true; }
     };
 
     // Toggle button (custom pill)

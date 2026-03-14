@@ -124,10 +124,16 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
     }
 
     if (noiseFrames == 0)
+    {
+        DBG("noiseReduce: no noise frames collected, skipping");
         return;
+    }
 
     for (auto& v : noiseSpectrum)
         v /= static_cast<float>(noiseFrames);
+
+    DBG("noiseReduce: noiseEnd=" + juce::String(noiseEnd) + " noiseFrames=" + juce::String(noiseFrames)
+        + " totalSamples=" + juce::String(numSamples));
 
     //--------------------------------------------------------------------------
     // 2) Spectral subtraction with overlap-add

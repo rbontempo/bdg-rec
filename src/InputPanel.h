@@ -43,8 +43,6 @@ private:
     // Task 11 – Volume
     juce::Slider volumeSlider;
 
-    // Task 11 – Monitor toggle
-    juce::ToggleButton monitorButton;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InputPanel)
 };

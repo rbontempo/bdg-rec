@@ -3,10 +3,28 @@
 
 VuMeter::VuMeter() {}
 
+// Convert linear RMS (0-1) to a 0-1 display value using dB scale.
+// Maps -60 dB → 0.0, 0 dB → 1.0
+static float rmsToDisplay(float rms)
+{
+    if (rms <= 0.0f) return 0.0f;
+    const float minDb = -60.0f;
+    float db = 20.0f * std::log10(rms);
+    if (db <= minDb) return 0.0f;
+    return (db - minDb) / -minDb; // normalize to 0-1
+}
+
 void VuMeter::setLevels(float l, float r)
 {
-    levelL = juce::jlimit(0.0f, 1.0f, l);
-    levelR = juce::jlimit(0.0f, 1.0f, r);
+    levelL = rmsToDisplay(juce::jlimit(0.0f, 1.0f, l));
+    levelR = rmsToDisplay(juce::jlimit(0.0f, 1.0f, r));
+
+    static int dbgCount = 0;
+    if (++dbgCount % 20 == 0)
+        DBG("VuMeter: in L=" + juce::String(l, 4) + " R=" + juce::String(r, 4)
+            + " display L=" + juce::String(levelL, 3) + " R=" + juce::String(levelR, 3)
+            + " bounds=" + juce::String(getWidth()) + "x" + juce::String(getHeight()));
+
     repaint();
 }
 

@@ -36,7 +36,7 @@ MainComponent::MainComponent()
     // Task 18 – load saved settings and apply to UI
     loadSettings();
 
-    setSize(960, 600);
+    setSize(720, 420);
 }
 
 MainComponent::~MainComponent()
@@ -116,6 +116,7 @@ void MainComponent::devicesChanged()
 //==============================================================================
 void MainComponent::handleRecordButtonClicked()
 {
+    DBG("handleRecordButtonClicked: isRecording=" + juce::String(isRecording ? "true" : "false"));
     if (!isRecording)
     {
         // Task 19 – Validate device
@@ -134,13 +135,21 @@ void MainComponent::handleRecordButtonClicked()
         }
 
         // Task 19 – startRecording error handling
+        DBG("handleRecordButtonClicked: folder=" + folder.getFullPathName());
+        DBG("handleRecordButtonClicked: device=" + audioEngine.getCurrentInputDeviceName());
         if (audioEngine.startRecording(folder))
         {
+            DBG("Recording started successfully");
             isRecording = true;
             recordingPanel.startRecording(folder);
+
+            // Start countdown overlay when noise reduction is enabled
+            if (outputPanel.isNoiseReductionOn())
+                recordingPanel.startCountdown();
         }
         else
         {
+            DBG("Recording FAILED to start");
             toastComponent.showError("Falha ao iniciar gravacao.");
         }
     }
@@ -165,10 +174,12 @@ void MainComponent::handleRecordButtonClicked()
             }
             catch (const std::exception& e)
             {
+                dspOverlay.hide();
                 toastComponent.showError(juce::String("Erro no processamento: ") + e.what());
             }
             catch (...)
             {
+                dspOverlay.hide();
                 toastComponent.showError("Erro desconhecido no processamento.");
             }
         }
