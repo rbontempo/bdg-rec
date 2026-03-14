@@ -59,6 +59,26 @@ void HeaderBar::paint(juce::Graphics& g)
     g.drawText(" REC", juce::Rectangle<float>(textX + bdgWidth + 2.0f, textY, 52.0f, textH),
                juce::Justification::centredLeft, false);
 
+    // === Language selector: PT | EN ===
+    {
+        bool isPt = (Strings::getLanguage() == Language::PT);
+
+        g.setFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
+
+        // PT button
+        g.setColour(isPt ? BdgColours::primary : BdgColours::textMuted);
+        g.drawText("PT", ptRect.toFloat(), juce::Justification::centred, false);
+
+        // Separator
+        float sepX = (float)ptRect.getRight() + 1.0f;
+        g.setColour(BdgColours::border);
+        g.drawLine(sepX, (float)h * 0.3f, sepX, (float)h * 0.7f, 1.0f);
+
+        // EN button
+        g.setColour(!isPt ? BdgColours::primary : BdgColours::textMuted);
+        g.drawText("EN", enRect.toFloat(), juce::Justification::centred, false);
+    }
+
     // === Version label: right-aligned ===
     juce::Font mutedFont(juce::FontOptions().withHeight(12.0f));
     g.setFont(mutedFont);
@@ -70,4 +90,37 @@ void HeaderBar::paint(juce::Graphics& g)
     // === Bottom border line ===
     g.setColour(BdgColours::border);
     g.drawHorizontalLine(h - 1, 0.0f, (float)w);
+}
+
+void HeaderBar::resized()
+{
+    const int h = getHeight();
+    const int w = getWidth();
+    // Position PT|EN to the left of "v1.0" (which is ~30px from right)
+    const int btnW = 24;
+    const int btnH = 20;
+    const int y = (h - btnH) / 2;
+    const int enX = w - 14 - 30 - btnW;      // left of "v1.0"
+    const int ptX = enX - btnW - 4;           // left of separator
+
+    ptRect = { ptX, y, btnW, btnH };
+    enRect = { enX, y, btnW, btnH };
+}
+
+void HeaderBar::mouseDown(const juce::MouseEvent& e)
+{
+    auto pos = e.getPosition();
+
+    if (ptRect.contains(pos) && Strings::getLanguage() != Language::PT)
+    {
+        Strings::setLanguage(Language::PT);
+        repaint();
+        if (onLanguageChanged) onLanguageChanged();
+    }
+    else if (enRect.contains(pos) && Strings::getLanguage() != Language::EN)
+    {
+        Strings::setLanguage(Language::EN);
+        repaint();
+        if (onLanguageChanged) onLanguageChanged();
+    }
 }

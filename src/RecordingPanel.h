@@ -27,6 +27,7 @@ public:
     // Recording state control (called by MainComponent)
     void startRecording(const juce::File& destFolder);
     void stopRecording();
+    void setDestFolder(const juce::File& folder);
 
     // Callback wired up by MainComponent
     std::function<void()> onRecordClicked;

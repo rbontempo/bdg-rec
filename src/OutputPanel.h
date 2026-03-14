@@ -9,6 +9,7 @@ public:
     OutputPanel();
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void updateLanguage();
 
     // Getters for treatment toggles
     bool isNormalizeOn()       const { return normalizeOn; }

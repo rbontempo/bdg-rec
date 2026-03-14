@@ -29,12 +29,28 @@ MainComponent::MainComponent()
     // Wire up record button
     recordingPanel.onRecordClicked = [this]() { handleRecordButtonClicked(); };
 
+    // Wire up language switcher
+    headerBar.onLanguageChanged = [this]()
+    {
+        inputPanel.repaint();
+        recordingPanel.repaint();
+        outputPanel.updateLanguage();
+        saveSettings();
+    };
+
     // Task 18 – save on every settings change
     inputPanel.onSettingsChanged  = [this]() { saveSettings(); };
-    outputPanel.onSettingsChanged = [this]() { saveSettings(); };
+    outputPanel.onSettingsChanged = [this]()
+    {
+        recordingPanel.setDestFolder(outputPanel.getDestFolder());
+        saveSettings();
+    };
 
     // Task 18 – load saved settings and apply to UI
     loadSettings();
+
+    // Sync disk space display with current folder
+    recordingPanel.setDestFolder(outputPanel.getDestFolder());
 
     // Check for orphaned recordings from a previous crash
     juce::MessageManager::callAsync([this]() {
@@ -96,6 +112,7 @@ void MainComponent::saveSettings()
         props->setValue("noiseReduction",  outputPanel.isNoiseReductionOn());
         props->setValue("compressor",      outputPanel.isCompressorOn());
         props->setValue("deEsser",         outputPanel.isDeEsserOn());
+        props->setValue("language",        Strings::getLanguage() == Language::EN ? "en" : "pt");
         props->saveIfNeeded();
     }
 }
@@ -119,7 +136,10 @@ void MainComponent::loadSettings()
         {
             juce::File folder(folderPath);
             if (folder.isDirectory())
+            {
                 outputPanel.setDestFolder(folder);
+                recordingPanel.setDestFolder(folder);
+            }
         }
 
         // Treatment toggles
@@ -127,6 +147,10 @@ void MainComponent::loadSettings()
         outputPanel.setNoiseReduction(props->getBoolValue("noiseReduction", false));
         outputPanel.setCompressor    (props->getBoolValue("compressor",     false));
         outputPanel.setDeEsser       (props->getBoolValue("deEsser",        false));
+
+        // Language
+        juce::String lang = props->getValue("language", "pt");
+        Strings::setLanguage(lang == "en" ? Language::EN : Language::PT);
     }
 }
 

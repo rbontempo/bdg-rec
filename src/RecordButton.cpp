@@ -4,11 +4,20 @@ RecordButton::RecordButton()
 {
     setSize(64, 64);
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    startTimerHz(30); // 30fps pulse animation
 }
 
 void RecordButton::setRecordingState(bool recording)
 {
     isRecordingState = recording;
+    repaint();
+}
+
+void RecordButton::timerCallback()
+{
+    pulsePhase += 0.08f; // ~2.4 rad/sec at 30fps → full cycle ~2.6s
+    if (pulsePhase > juce::MathConstants<float>::twoPi)
+        pulsePhase -= juce::MathConstants<float>::twoPi;
     repaint();
 }
 
@@ -38,28 +47,33 @@ void RecordButton::paint(juce::Graphics& g)
     const float cy   = getHeight() * 0.5f;
     const float half = size * 0.5f;
 
+    // Pulse: smooth sine wave 0..1
+    const float pulse = (std::sin(pulsePhase) + 1.0f) * 0.5f; // 0..1
+
     auto bounds = juce::Rectangle<float>(cx - half, cy - half, size, size);
+
+    // Inner icon pulse: scale between 0.85 and 1.15
+    const float pulseScale = 0.85f + pulse * 0.30f;
 
     if (!isRecordingState)
     {
-        // Shadow / glow
+        // Static glow
         {
             const float glowR = half + 8.0f;
-            juce::ColourGradient glow(juce::Colour(0xffE5067D).withAlpha(0.35f),
+            juce::ColourGradient glow(BdgColours::primary.withAlpha(0.35f),
                                       cx, cy,
                                       juce::Colours::transparentBlack,
-                                      cx + glowR, cy,
-                                      true);
+                                      cx + glowR, cy, true);
             g.setGradientFill(glow);
             g.fillEllipse(cx - glowR, cy - glowR, glowR * 2.0f, glowR * 2.0f);
         }
 
-        // Pink circle (fixed size)
+        // Pink circle (fixed)
         g.setColour(BdgColours::primary);
         g.fillEllipse(bounds);
 
-        // White inner circle — scales on hover
-        const float innerR = 10.0f * iconScale;
+        // White inner circle — pulses size
+        const float innerR = 10.0f * pulseScale * iconScale;
         g.setColour(juce::Colours::white);
         g.fillEllipse(cx - innerR, cy - innerR, innerR * 2.0f, innerR * 2.0f);
     }
@@ -68,21 +82,20 @@ void RecordButton::paint(juce::Graphics& g)
         // Stronger glow
         {
             const float glowR = half + 14.0f;
-            juce::ColourGradient glow(juce::Colour(0xffE5067D).withAlpha(0.60f),
+            juce::ColourGradient glow(BdgColours::primary.withAlpha(0.60f),
                                       cx, cy,
                                       juce::Colours::transparentBlack,
-                                      cx + glowR, cy,
-                                      true);
+                                      cx + glowR, cy, true);
             g.setGradientFill(glow);
             g.fillEllipse(cx - glowR, cy - glowR, glowR * 2.0f, glowR * 2.0f);
         }
 
-        // Pink rounded rect (fixed size)
+        // Pink rounded rect (fixed)
         g.setColour(BdgColours::primary);
         g.fillRoundedRectangle(bounds, 12.0f);
 
-        // White inner square — scales on hover
-        const float innerHalf = 10.0f * iconScale;
+        // White inner square — pulses size
+        const float innerHalf = 10.0f * pulseScale * iconScale;
         g.setColour(juce::Colours::white);
         g.fillRoundedRectangle(cx - innerHalf, cy - innerHalf,
                                innerHalf * 2.0f, innerHalf * 2.0f, 3.0f);

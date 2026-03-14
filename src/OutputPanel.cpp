@@ -338,6 +338,20 @@ void OutputPanel::setDeEsser(bool v)
 }
 
 //==============================================================================
+void OutputPanel::updateLanguage()
+{
+    normalizeRow.labelText  = Strings::get().normalizar;
+    noiseRow.labelText      = Strings::get().reducaoRuido;
+    compressorRow.labelText = Strings::get().compressor;
+    deEsserRow.labelText    = Strings::get().deEsser;
+    normalizeRow.repaint();
+    noiseRow.repaint();
+    compressorRow.repaint();
+    deEsserRow.repaint();
+    repaint();
+}
+
+//==============================================================================
 void OutputPanel::resized()
 {
     using namespace OutputLayout;

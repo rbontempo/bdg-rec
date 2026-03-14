@@ -53,6 +53,13 @@ void RecordingPanel::startRecording(const juce::File& destFolder)
     repaint();
 }
 
+void RecordingPanel::setDestFolder(const juce::File& folder)
+{
+    currentDestFolder = folder;
+    updateDiskSpace();
+    repaint();
+}
+
 void RecordingPanel::stopRecording()
 {
     isRecording = false;
