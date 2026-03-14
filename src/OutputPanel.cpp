@@ -52,9 +52,21 @@ OutputPanel::OutputPanel()
     addAndMakeVisible(folderButton);
 
     // Treatment toggles
-    normalizeRow.onToggle = [this](bool v) { normalizeOn = v; };
-    noiseRow.onToggle     = [this](bool v) { noiseReductionOn = v; };
-    compressorRow.onToggle= [this](bool v) { compressorOn = v; };
+    normalizeRow.onToggle = [this](bool v)
+    {
+        normalizeOn = v;
+        if (onSettingsChanged) onSettingsChanged();
+    };
+    noiseRow.onToggle = [this](bool v)
+    {
+        noiseReductionOn = v;
+        if (onSettingsChanged) onSettingsChanged();
+    };
+    compressorRow.onToggle = [this](bool v)
+    {
+        compressorOn = v;
+        if (onSettingsChanged) onSettingsChanged();
+    };
 
     addAndMakeVisible(normalizeRow);
     addAndMakeVisible(noiseRow);
@@ -78,6 +90,7 @@ void OutputPanel::openFolderChooser()
             {
                 destFolder = result;
                 repaint();
+                if (onSettingsChanged) onSettingsChanged();
             }
         });
 }
@@ -255,6 +268,37 @@ void OutputPanel::paint(juce::Graphics& g)
     g.drawHorizontalLine((int)ty2, treatRect.getX() + 1.0f, treatRect.getRight() - 1.0f);
 }
 
+//==============================================================================
+// Settings persistence setters (Task 18)
+//==============================================================================
+void OutputPanel::setDestFolder(const juce::File& folder)
+{
+    destFolder = folder;
+    repaint();
+}
+
+void OutputPanel::setNormalize(bool v)
+{
+    normalizeOn = v;
+    normalizeRow.value = v;
+    normalizeRow.repaint();
+}
+
+void OutputPanel::setNoiseReduction(bool v)
+{
+    noiseReductionOn = v;
+    noiseRow.value = v;
+    noiseRow.repaint();
+}
+
+void OutputPanel::setCompressor(bool v)
+{
+    compressorOn = v;
+    compressorRow.value = v;
+    compressorRow.repaint();
+}
+
+//==============================================================================
 void OutputPanel::resized()
 {
     const float padding  = 14.0f;

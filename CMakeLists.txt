@@ -46,6 +46,7 @@ target_compile_definitions(BDG_REC PRIVATE
 
 target_link_libraries(BDG_REC PRIVATE
     juce::juce_core
+    juce::juce_data_structures
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats

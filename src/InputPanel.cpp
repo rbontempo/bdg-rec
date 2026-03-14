@@ -21,7 +21,10 @@ InputPanel::InputPanel(AudioEngine& engine)
     {
         const juce::String name = deviceCombo.getText();
         if (name.isNotEmpty())
+        {
             audioEngine.setInputDevice(name);
+            if (onSettingsChanged) onSettingsChanged();
+        }
     };
 
     addAndMakeVisible(deviceCombo);
@@ -38,6 +41,7 @@ InputPanel::InputPanel(AudioEngine& engine)
     volumeSlider.onValueChange = [this]()
     {
         audioEngine.setGain(static_cast<float>(volumeSlider.getValue()) / 100.0f);
+        if (onSettingsChanged) onSettingsChanged();
     };
     addAndMakeVisible(volumeSlider);
 
@@ -60,6 +64,39 @@ InputPanel::~InputPanel()
 void InputPanel::audioLevelsChanged(float l, float r)
 {
     vuMeter.setLevels(l, r);
+}
+
+//==============================================================================
+void InputPanel::setDevice(const juce::String& deviceName)
+{
+    auto devices = audioEngine.getInputDevices();
+    int idx = devices.indexOf(deviceName);
+    if (idx >= 0)
+        deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
+}
+
+void InputPanel::setVolume(int value)
+{
+    volumeSlider.setValue(static_cast<double>(value), juce::dontSendNotification);
+    audioEngine.setGain(static_cast<float>(value) / 100.0f);
+    repaint(); // update volume % label
+}
+
+void InputPanel::refreshDeviceList()
+{
+    const juce::String currentName = deviceCombo.getText();
+
+    deviceCombo.clear(juce::dontSendNotification);
+    auto devices = audioEngine.getInputDevices();
+    for (int i = 0; i < devices.size(); ++i)
+        deviceCombo.addItem(devices[i], i + 1);
+
+    // Re-select device by name if still available
+    int idx = devices.indexOf(currentName);
+    if (idx >= 0)
+        deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
+    else
+        deviceCombo.setSelectedItemIndex(-1, juce::dontSendNotification);
 }
 
 //==============================================================================

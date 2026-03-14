@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_data_structures/juce_data_structures.h>
 #include "BdgLookAndFeel.h"
 #include "HeaderBar.h"
 #include "InputPanel.h"
@@ -24,6 +25,7 @@ public:
     void dspStepChanged(const juce::String& step) override;
     void dspFinished(const juce::File& file) override;
     void dspError(const juce::String& error) override;
+    void devicesChanged() override; // Task 19
 
 private:
     BdgLookAndFeel bdgLookAndFeel;
@@ -37,11 +39,18 @@ private:
     DspOverlay     dspOverlay;
     ToastComponent toastComponent;
 
+    // Task 18 – Settings persistence
+    juce::ApplicationProperties appProperties;
+
     // Recording state
     juce::File     lastRecordedFile;
     bool           isRecording = false;
 
     void handleRecordButtonClicked();
+
+    // Task 18 – persist / restore settings
+    void saveSettings();
+    void loadSettings();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

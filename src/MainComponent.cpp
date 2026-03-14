@@ -4,6 +4,16 @@ MainComponent::MainComponent()
 {
     setLookAndFeel(&bdgLookAndFeel);
 
+    // Task 18 – init ApplicationProperties
+    {
+        juce::PropertiesFile::Options opts;
+        opts.applicationName = "BDG_REC";
+        opts.folderName      = "BDG";
+        opts.filenameSuffix  = ".settings";
+        opts.osxLibrarySubFolder = "Application Support";
+        appProperties.setStorageParameters(opts);
+    }
+
     audioEngine.initialise();
     audioEngine.addListener(this);
 
@@ -19,6 +29,13 @@ MainComponent::MainComponent()
     // Wire up record button
     recordingPanel.onRecordClicked = [this]() { handleRecordButtonClicked(); };
 
+    // Task 18 – save on every settings change
+    inputPanel.onSettingsChanged  = [this]() { saveSettings(); };
+    outputPanel.onSettingsChanged = [this]() { saveSettings(); };
+
+    // Task 18 – load saved settings and apply to UI
+    loadSettings();
+
     setSize(960, 600);
 }
 
@@ -26,20 +43,97 @@ MainComponent::~MainComponent()
 {
     audioEngine.removeListener(this);
     setLookAndFeel(nullptr);
+
+    // Flush settings to disk
+    appProperties.closeFiles();
 }
 
+//==============================================================================
+// Task 18 – Settings persistence
+//==============================================================================
+void MainComponent::saveSettings()
+{
+    if (auto* props = appProperties.getUserSettings())
+    {
+        props->setValue("inputDevice",     inputPanel.getDeviceComboText());
+        props->setValue("volume",          (int)inputPanel.getVolumeValue());
+        props->setValue("destFolder",      outputPanel.getDestFolder().getFullPathName());
+        props->setValue("normalize",       outputPanel.isNormalizeOn());
+        props->setValue("noiseReduction",  outputPanel.isNoiseReductionOn());
+        props->setValue("compressor",      outputPanel.isCompressorOn());
+        props->saveIfNeeded();
+    }
+}
+
+void MainComponent::loadSettings()
+{
+    if (auto* props = appProperties.getUserSettings())
+    {
+        // Input device
+        juce::String device = props->getValue("inputDevice", "");
+        if (device.isNotEmpty())
+            inputPanel.setDevice(device);
+
+        // Volume (default 100)
+        int vol = props->getIntValue("volume", 100);
+        inputPanel.setVolume(vol);
+
+        // Destination folder
+        juce::String folderPath = props->getValue("destFolder", "");
+        if (folderPath.isNotEmpty())
+        {
+            juce::File folder(folderPath);
+            if (folder.isDirectory())
+                outputPanel.setDestFolder(folder);
+        }
+
+        // Treatment toggles
+        outputPanel.setNormalize     (props->getBoolValue("normalize",      false));
+        outputPanel.setNoiseReduction(props->getBoolValue("noiseReduction", false));
+        outputPanel.setCompressor    (props->getBoolValue("compressor",     false));
+    }
+}
+
+//==============================================================================
+// Task 19 – Device hot-plug
+//==============================================================================
+void MainComponent::devicesChanged()
+{
+    // Refresh the input device ComboBox
+    inputPanel.refreshDeviceList();
+
+    // If we were recording and the device is gone, show error
+    if (isRecording && audioEngine.getCurrentInputDeviceName().isEmpty())
+    {
+        isRecording = false;
+        recordingPanel.stopRecording();
+        toastComponent.showError("Dispositivo desconectado. Gravacao interrompida.");
+    }
+}
+
+//==============================================================================
+// Recording control
+//==============================================================================
 void MainComponent::handleRecordButtonClicked()
 {
     if (!isRecording)
     {
-        // Validate folder
-        juce::File folder = outputPanel.getDestFolder();
-        if (!folder.exists() || !folder.isDirectory())
+        // Task 19 – Validate device
+        if (audioEngine.getCurrentInputDeviceName().isEmpty())
         {
-            toastComponent.showError("Pasta de destino invalida.");
+            toastComponent.showError("Selecione um microfone.");
             return;
         }
 
+        // Task 19 – Validate folder
+        juce::File folder = outputPanel.getDestFolder();
+        if (!folder.exists() || !folder.isDirectory())
+        {
+            toastComponent.showError("Configure a pasta de destino.");
+            return;
+        }
+
+        // Task 19 – startRecording error handling
         if (audioEngine.startRecording(folder))
         {
             isRecording = true;
@@ -64,7 +158,19 @@ void MainComponent::handleRecordButtonClicked()
 
         if ((doNorm || doNoise || doComp) && lastRecordedFile.existsAsFile())
         {
-            audioEngine.processRecording(lastRecordedFile, doNorm, doNoise, doComp);
+            // Task 19 – wrap processRecording in try/catch
+            try
+            {
+                audioEngine.processRecording(lastRecordedFile, doNorm, doNoise, doComp);
+            }
+            catch (const std::exception& e)
+            {
+                toastComponent.showError(juce::String("Erro no processamento: ") + e.what());
+            }
+            catch (...)
+            {
+                toastComponent.showError("Erro desconhecido no processamento.");
+            }
         }
         else if (lastRecordedFile.existsAsFile())
         {

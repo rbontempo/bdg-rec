@@ -17,6 +17,15 @@ public:
     // Folder getter
     juce::File getDestFolder() const { return destFolder; }
 
+    // Settings persistence setters (Task 18)
+    void setDestFolder(const juce::File& folder);
+    void setNormalize(bool v);
+    void setNoiseReduction(bool v);
+    void setCompressor(bool v);
+
+    // Callback for settings changes (Task 18)
+    std::function<void()> onSettingsChanged;
+
 private:
     // Folder button (clickable)
     struct FolderButton : public juce::Component

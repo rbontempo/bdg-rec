@@ -17,6 +17,20 @@ public:
     // AudioEngine::Listener
     void audioLevelsChanged(float l, float r) override;
 
+    // Settings persistence setters (Task 18)
+    void setDevice(const juce::String& deviceName);
+    void setVolume(int value); // 0-200
+
+    // Settings getters (Task 18)
+    juce::String getDeviceComboText() const { return deviceCombo.getText(); }
+    int          getVolumeValue()     const { return static_cast<int>(volumeSlider.getValue()); }
+
+    // Device hot-plug refresh (Task 19)
+    void refreshDeviceList();
+
+    // Callbacks for settings changes (Task 18)
+    std::function<void()> onSettingsChanged;
+
 private:
     AudioEngine& audioEngine;
 
