@@ -10,14 +10,6 @@ RecordingPanel::RecordingPanel(AudioEngine& engine)
     timerLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(timerLabel);
 
-    // Countdown label
-    countdownLabel.setText("", juce::dontSendNotification);
-    countdownLabel.setFont(juce::FontOptions().withHeight(48.0f).withStyle("Bold"));
-    countdownLabel.setColour(juce::Label::textColourId, BdgColours::primary);
-    countdownLabel.setJustificationType(juce::Justification::centred);
-    countdownLabel.setVisible(false);
-    addAndMakeVisible(countdownLabel);
-
     // Disk space label
     diskSpaceLabel.setText("--G", juce::dontSendNotification);
     diskSpaceLabel.setFont(juce::FontOptions().withHeight(12.0f));
@@ -68,14 +60,6 @@ void RecordingPanel::stopRecording()
     repaint();
 }
 
-void RecordingPanel::startCountdown()
-{
-    countdownVal = 5;
-    countdownLabel.setText("5", juce::dontSendNotification);
-    countdownLabel.setVisible(true);
-    repaint();
-}
-
 //==============================================================================
 void RecordingPanel::audioLevelsChanged(float rmsL, float rmsR)
 {
@@ -92,26 +76,6 @@ void RecordingPanel::audioLevelsChanged(float rmsL, float rmsR)
 void RecordingPanel::timerCallback()
 {
     timerTick++;
-
-    // Countdown logic (ticks every 500ms, decrement every 2 ticks = 1 second)
-    if (countdownVal > 0)
-    {
-        if (timerTick % 2 == 0)
-        {
-            countdownVal--;
-            if (countdownVal <= 0)
-            {
-                countdownLabel.setVisible(false);
-                countdownVal = 0;
-            }
-            else
-            {
-                countdownLabel.setText(juce::String(countdownVal),
-                                       juce::dontSendNotification);
-            }
-        }
-        return; // don't advance timer during countdown
-    }
 
     if (isRecording)
     {
@@ -297,7 +261,4 @@ void RecordingPanel::resized()
 
     // Waveform fills the rest
     waveformDisplay.setBounds(area.reduced(padding, 4));
-
-    // Countdown label overlaid on waveform
-    countdownLabel.setBounds(waveformDisplay.getBounds());
 }

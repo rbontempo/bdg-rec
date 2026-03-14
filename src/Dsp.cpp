@@ -1,5 +1,8 @@
 #include "Dsp.h"
 #include <cmath>
+#include <vector>
+#include <algorithm>
+#include "rnnoise.h"
 
 //==============================================================================
 void Dsp::normalize(juce::AudioBuffer<float>& buffer)
@@ -73,138 +76,87 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
     if (numSamples == 0 || sampleRate <= 0.0)
         return;
 
-    constexpr int fftOrder = 11;
-    constexpr int fftSize  = 2048; // 1 << 11
-    constexpr int hopSize  = fftSize / 2;
-
-    if (numSamples < fftSize)
-        return;
-
-    const int noiseEnd = std::min(static_cast<int>(sampleRate * 5.0), numSamples);
-
     float* data = buffer.getWritePointer(0);
 
-    // Build Hann window
-    std::vector<float> window(fftSize);
-    for (int i = 0; i < fftSize; ++i)
-        window[i] = 0.5f * (1.0f - std::cos(2.0f * juce::MathConstants<float>::pi * i / (fftSize - 1)));
+    // RNNoise requires 48000 Hz and processes frames of exactly 480 samples.
+    const double targetRate = 48000.0;
+    const int frameSize = 480; // 10 ms at 48 kHz
 
-    juce::dsp::FFT fft(fftOrder);
-    // Working buffer for FFT: needs fftSize * 2 floats
-    std::vector<float> fftData(fftSize * 2);
+    bool needsResample = std::abs(sampleRate - targetRate) > 1.0;
 
-    //--------------------------------------------------------------------------
-    // 1) Build noise profile from first 5 seconds
-    //--------------------------------------------------------------------------
-    std::vector<float> noiseSpectrum(fftSize / 2 + 1, 0.0f);
-    int noiseFrames = 0;
+    std::vector<float> resampled;
+    float* processData = data;
+    int processLen = numSamples;
 
+    if (needsResample)
     {
-        int pos = 0;
-        while (pos + fftSize <= noiseEnd)
+        // Linear-interpolation resample to 48 kHz
+        double ratio = targetRate / sampleRate;
+        processLen = static_cast<int>(numSamples * ratio);
+        resampled.resize(static_cast<size_t>(processLen));
+
+        for (int i = 0; i < processLen; ++i)
         {
-            // Fill fftData with windowed input
-            std::fill(fftData.begin(), fftData.end(), 0.0f);
-            for (int i = 0; i < fftSize; ++i)
-                fftData[i] = data[pos + i] * window[i];
-
-            fft.performRealOnlyForwardTransform(fftData.data());
-
-            // Accumulate magnitudes for bins 0..fftSize/2
-            for (int bin = 0; bin <= fftSize / 2; ++bin)
-            {
-                float re = fftData[bin * 2];
-                float im = fftData[bin * 2 + 1];
-                noiseSpectrum[bin] += std::sqrt(re * re + im * im);
-            }
-
-            ++noiseFrames;
-            pos += hopSize;
+            double srcPos = i / ratio;
+            int idx = static_cast<int>(srcPos);
+            double frac = srcPos - idx;
+            int idx1 = std::min(idx + 1, numSamples - 1);
+            resampled[static_cast<size_t>(i)] = static_cast<float>((1.0 - frac) * data[idx] + frac * data[idx1]);
         }
+        processData = resampled.data();
     }
 
-    if (noiseFrames == 0)
+    // RNNoise expects samples in [-32768, 32768] (16-bit range)
+    for (int i = 0; i < processLen; ++i)
+        processData[i] *= 32768.0f;
+
+    // Process with RNNoise
+    DenoiseState* st = rnnoise_create(nullptr);
+
+    std::vector<float> output(static_cast<size_t>(processLen));
+    int pos = 0;
+    float frame_in[480];
+    float frame_out[480];
+
+    while (pos + frameSize <= processLen)
     {
-        DBG("noiseReduce: no noise frames collected, skipping");
-        return;
+        std::copy(processData + pos, processData + pos + frameSize, frame_in);
+        rnnoise_process_frame(st, frame_out, frame_in);
+        std::copy(frame_out, frame_out + frameSize, output.data() + pos);
+        pos += frameSize;
     }
 
-    for (auto& v : noiseSpectrum)
-        v /= static_cast<float>(noiseFrames);
-
-    DBG("noiseReduce: noiseEnd=" + juce::String(noiseEnd) + " noiseFrames=" + juce::String(noiseFrames)
-        + " totalSamples=" + juce::String(numSamples));
-
-    //--------------------------------------------------------------------------
-    // 2) Spectral subtraction with overlap-add
-    //--------------------------------------------------------------------------
-    const float oversubtraction = 2.0f;
-    const float spectralFloor   = 0.02f;
-
-    std::vector<float> output(numSamples, 0.0f);
-    std::vector<float> windowSum(numSamples, 0.0f);
-
+    // Handle remaining samples: pad with zeros, process, keep only what we need
+    if (pos < processLen)
     {
-        int pos = 0;
-        while (pos + fftSize <= numSamples)
-        {
-            // Windowed FFT
-            std::fill(fftData.begin(), fftData.end(), 0.0f);
-            for (int i = 0; i < fftSize; ++i)
-                fftData[i] = data[pos + i] * window[i];
-
-            fft.performRealOnlyForwardTransform(fftData.data());
-
-            // Spectral subtraction
-            for (int bin = 0; bin <= fftSize / 2; ++bin)
-            {
-                float re  = fftData[bin * 2];
-                float im  = fftData[bin * 2 + 1];
-                float mag = std::sqrt(re * re + im * im);
-                float phase = std::atan2(im, re);
-
-                float cleanedMag = std::max(mag - oversubtraction * noiseSpectrum[bin],
-                                            spectralFloor * mag);
-
-                fftData[bin * 2]     = cleanedMag * std::cos(phase);
-                fftData[bin * 2 + 1] = cleanedMag * std::sin(phase);
-            }
-
-            fft.performRealOnlyInverseTransform(fftData.data());
-
-            // Overlap-add with synthesis window and FFT scaling
-            for (int i = 0; i < fftSize; ++i)
-            {
-                int idx = pos + i;
-                if (idx < numSamples)
-                {
-                    output[idx]    += fftData[i] * window[i] / static_cast<float>(fftSize);
-                    windowSum[idx] += window[i] * window[i];
-                }
-            }
-
-            pos += hopSize;
-        }
+        int remaining = processLen - pos;
+        std::fill(frame_in, frame_in + frameSize, 0.0f);
+        std::copy(processData + pos, processData + pos + remaining, frame_in);
+        rnnoise_process_frame(st, frame_out, frame_in);
+        std::copy(frame_out, frame_out + remaining, output.data() + pos);
     }
 
-    //--------------------------------------------------------------------------
-    // 3) Normalize by window sum; crossfade at boundaries
-    //--------------------------------------------------------------------------
-    constexpr float fullCoverage = 0.9f;
+    rnnoise_destroy(st);
 
-    for (int i = 0; i < numSamples; ++i)
+    // Scale back to [-1, 1]
+    for (int i = 0; i < processLen; ++i)
+        output[static_cast<size_t>(i)] /= 32768.0f;
+
+    // If we resampled, convert back to original sample rate
+    if (needsResample)
     {
-        if (windowSum[i] >= fullCoverage)
+        for (int i = 0; i < numSamples; ++i)
         {
-            data[i] = juce::jlimit(-1.0f, 1.0f, output[i] / windowSum[i]);
+            double srcIdx = static_cast<double>(i) * processLen / numSamples;
+            int idx = static_cast<int>(srcIdx);
+            double frac = srcIdx - idx;
+            int idx1 = std::min(idx + 1, processLen - 1);
+            data[i] = static_cast<float>((1.0 - frac) * output[static_cast<size_t>(idx)]
+                                         + frac * output[static_cast<size_t>(idx1)]);
         }
-        else if (windowSum[i] > 1e-10f)
-        {
-            float blend     = windowSum[i] / fullCoverage;
-            float processed = output[i] / windowSum[i];
-            float mixed     = processed * blend + data[i] * (1.0f - blend);
-            data[i] = juce::jlimit(-1.0f, 1.0f, mixed);
-        }
-        // else: keep original sample (no coverage)
+    }
+    else
+    {
+        std::copy(output.begin(), output.end(), data);
     }
 }

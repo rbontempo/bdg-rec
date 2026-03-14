@@ -13,6 +13,27 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
+# ---- RNNoise (vendored) ----
+add_library(rnnoise STATIC
+    external/rnnoise/src/denoise.c
+    external/rnnoise/src/rnn.c
+    external/rnnoise/src/rnnoise_data.c
+    external/rnnoise/src/rnnoise_tables.c
+    external/rnnoise/src/pitch.c
+    external/rnnoise/src/kiss_fft.c
+    external/rnnoise/src/celt_lpc.c
+    external/rnnoise/src/nnet.c
+    external/rnnoise/src/nnet_default.c
+    external/rnnoise/src/parse_lpcnet_weights.c
+)
+target_include_directories(rnnoise PUBLIC
+    external/rnnoise/include
+    external/rnnoise/src
+)
+target_compile_definitions(rnnoise PRIVATE COMPILE_OPUS)
+# Suppress warnings from third-party C code
+target_compile_options(rnnoise PRIVATE -w)
+
 juce_add_gui_app(BDG_REC
     PRODUCT_NAME "BDG REC"
     COMPANY_NAME "BDG"
@@ -44,7 +65,10 @@ target_compile_definitions(BDG_REC PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
+target_include_directories(BDG_REC PRIVATE external/rnnoise/include)
+
 target_link_libraries(BDG_REC PRIVATE
+    rnnoise
     juce::juce_core
     juce::juce_data_structures
     juce::juce_audio_basics

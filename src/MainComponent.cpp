@@ -142,10 +142,6 @@ void MainComponent::handleRecordButtonClicked()
             DBG("Recording started successfully");
             isRecording = true;
             recordingPanel.startRecording(folder);
-
-            // Start countdown overlay when noise reduction is enabled
-            if (outputPanel.isNoiseReductionOn())
-                recordingPanel.startCountdown();
         }
         else
         {

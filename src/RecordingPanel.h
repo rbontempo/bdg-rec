@@ -26,9 +26,6 @@ public:
     void startRecording(const juce::File& destFolder);
     void stopRecording();
 
-    // Countdown (starts counting down from 5, then triggers recording)
-    void startCountdown();
-
     // Callback wired up by MainComponent
     std::function<void()> onRecordClicked;
 
@@ -42,13 +39,9 @@ private:
     // Header: timer label
     juce::Label timerLabel;
 
-    // Countdown label (overlaid on waveform)
-    juce::Label countdownLabel;
-
     // State
     bool  isRecording  = false;
     int   elapsedSecs  = 0;
-    int   countdownVal = 0;   // 0 = inactive
     int   timerTick    = 0;   // used for blink (incremented each 500 ms tick)
 
     // Disk space

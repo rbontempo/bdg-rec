@@ -1,6 +1,5 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
-#include <juce_dsp/juce_dsp.h>
 
 class Dsp
 {
@@ -11,8 +10,7 @@ public:
     /** Voice compressor: threshold -20 dB, ratio 4:1, attack 5 ms, release 100 ms. */
     static void compress(juce::AudioBuffer<float>& buffer, double sampleRate);
 
-    /** Spectral subtraction noise reduction.
-        Uses first 5 seconds as noise profile, FFT size 2048, 50% overlap. */
+    /** RNNoise neural-network noise suppression (48 kHz, automatic). */
     static void noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate);
 
 private:
