@@ -4,7 +4,8 @@
 
 class AudioEngine : public juce::AudioIODeviceCallback,
                     public juce::AsyncUpdater,
-                    public juce::ChangeListener
+                    public juce::ChangeListener,
+                    public juce::Timer
 {
 public:
     //==============================================================================
@@ -19,6 +20,9 @@ public:
         virtual void dspError(const juce::String& error) {}
         // Called on the message thread when the device list changes (Task 19)
         virtual void devicesChanged() {}
+        // Task 2: disk space monitoring
+        virtual void diskSpaceWarning(int remainingMinutes) {}
+        virtual void recordingAutoStopped() {}
     };
 
     //==============================================================================
@@ -84,6 +88,16 @@ public:
     //==============================================================================
     // ChangeListener – receives device-manager change notifications (Task 19)
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
+    //==============================================================================
+    // Timer (disk space polling – Task 2)
+    void timerCallback() override;
+
+    //==============================================================================
+    // Task 3: Post-crash recovery
+    juce::Array<juce::File> findOrphanedRecordings(const juce::File& destFolder);
+    juce::File recoverRecording(const juce::File& orphanedChunkFolder);
+    void discardRecording(const juce::File& orphanedChunkFolder);
 
 private:
     juce::AudioDeviceManager deviceManager;

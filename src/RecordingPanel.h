@@ -18,6 +18,7 @@ public:
 
     // AudioEngine::Listener
     void audioLevelsChanged(float rmsL, float rmsR) override;
+    void diskSpaceWarning(int remainingMinutes) override;
 
     // juce::Timer
     void timerCallback() override;
@@ -47,6 +48,7 @@ private:
     // Disk space
     juce::File  currentDestFolder;
     int         diskUpdateTick = 0;
+    int         diskWarningLevel{0}; // 0=normal, 1=warning, 2=critical
     juce::Label diskSpaceLabel;
 
     void updateTimerLabel();

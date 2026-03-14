@@ -36,6 +36,29 @@ MainComponent::MainComponent()
     // Task 18 – load saved settings and apply to UI
     loadSettings();
 
+    // Task 3 – check for orphaned recordings from a previous crash
+    juce::MessageManager::callAsync([this]() {
+        auto orphans = audioEngine.findOrphanedRecordings(outputPanel.getDestFolder());
+        if (!orphans.isEmpty())
+        {
+            auto folder = orphans.getFirst();
+            toastComponent.showWithActions(
+                "Gravacao anterior encontrada. Deseja recuperar?",
+                "Recuperar", [this, folder]() {
+                    auto recovered = audioEngine.recoverRecording(folder);
+                    if (recovered.existsAsFile())
+                        toastComponent.showSuccess("Recuperado!", recovered.getFileName());
+                    else
+                        toastComponent.showError("Falha na recuperacao.");
+                },
+                "Descartar", [this, folder]() {
+                    audioEngine.discardRecording(folder);
+                    toastComponent.showSuccess("Descartado.", "");
+                }
+            );
+        }
+    });
+
     setSize(720, 420);
 }
 
@@ -61,6 +84,7 @@ void MainComponent::saveSettings()
         props->setValue("normalize",       outputPanel.isNormalizeOn());
         props->setValue("noiseReduction",  outputPanel.isNoiseReductionOn());
         props->setValue("compressor",      outputPanel.isCompressorOn());
+        props->setValue("deEsser",         outputPanel.isDeEsserOn());
         props->saveIfNeeded();
     }
 }
@@ -91,6 +115,7 @@ void MainComponent::loadSettings()
         outputPanel.setNormalize     (props->getBoolValue("normalize",      false));
         outputPanel.setNoiseReduction(props->getBoolValue("noiseReduction", false));
         outputPanel.setCompressor    (props->getBoolValue("compressor",     false));
+        outputPanel.setDeEsser       (props->getBoolValue("deEsser",        false));
     }
 }
 
@@ -109,6 +134,29 @@ void MainComponent::devicesChanged()
         recordingPanel.stopRecording();
         toastComponent.showError("Dispositivo desconectado. Gravacao interrompida.");
     }
+}
+
+//==============================================================================
+// Task 2: Disk space monitoring
+//==============================================================================
+void MainComponent::diskSpaceWarning(int remainingMinutes)
+{
+    if (remainingMinutes <= 10 && !diskWarningShown)
+    {
+        diskWarningShown = true;
+        juce::MessageManager::callAsync([this, remainingMinutes]() {
+            toastComponent.showError("Espaco em disco baixo. Restam ~" + juce::String(remainingMinutes) + "min.");
+        });
+    }
+}
+
+void MainComponent::recordingAutoStopped()
+{
+    juce::MessageManager::callAsync([this]() {
+        isRecording = false;
+        recordingPanel.stopRecording();
+        toastComponent.showError("Gravacao parada: disco quase cheio.");
+    });
 }
 
 //==============================================================================
@@ -141,6 +189,7 @@ void MainComponent::handleRecordButtonClicked()
         {
             DBG("Recording started successfully");
             isRecording = true;
+            diskWarningShown = false;
             recordingPanel.startRecording(folder);
         }
         else
@@ -160,13 +209,14 @@ void MainComponent::handleRecordButtonClicked()
         bool doNorm  = outputPanel.isNormalizeOn();
         bool doNoise = outputPanel.isNoiseReductionOn();
         bool doComp  = outputPanel.isCompressorOn();
+        bool doDeEss = outputPanel.isDeEsserOn();
 
-        if ((doNorm || doNoise || doComp) && lastRecordedFile.existsAsFile())
+        if ((doNorm || doNoise || doComp || doDeEss) && lastRecordedFile.existsAsFile())
         {
             // Task 19 – wrap processRecording in try/catch
             try
             {
-                audioEngine.processRecording(lastRecordedFile, doNorm, doNoise, doComp);
+                audioEngine.processRecording(lastRecordedFile, doNorm, doNoise, doComp, doDeEss);
             }
             catch (const std::exception& e)
             {
@@ -197,7 +247,8 @@ void MainComponent::dspStarted()
     {
         dspOverlay.show(outputPanel.isNormalizeOn(),
                         outputPanel.isNoiseReductionOn(),
-                        outputPanel.isCompressorOn());
+                        outputPanel.isCompressorOn(),
+                        outputPanel.isDeEsserOn());
         resized(); // ensure overlay covers full window
     });
 }
@@ -259,10 +310,10 @@ void MainComponent::resized()
     // Overlay: covers entire window
     dspOverlay.setBounds(0, 0, w, h);
 
-    // Toast: bottom-center
+    // Toast: bottom-center (allocate tall height to cover both normal and action variants)
     const int toastX = (w - ToastComponent::toastWidth)  / 2;
-    const int toastY =  h - ToastComponent::toastHeight - 20;
+    const int toastY =  h - ToastComponent::toastHeightTall - 20;
     toastComponent.setBounds(toastX, toastY,
                              ToastComponent::toastWidth,
-                             ToastComponent::toastHeight);
+                             ToastComponent::toastHeightTall);
 }

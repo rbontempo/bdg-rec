@@ -26,6 +26,8 @@ public:
     void dspFinished(const juce::File& file) override;
     void dspError(const juce::String& error) override;
     void devicesChanged() override; // Task 19
+    void diskSpaceWarning(int remainingMinutes) override; // Task 2
+    void recordingAutoStopped() override; // Task 2
 
 private:
     BdgLookAndFeel bdgLookAndFeel;
@@ -45,6 +47,7 @@ private:
     // Recording state
     juce::File     lastRecordedFile;
     bool           isRecording = false;
+    bool           diskWarningShown = false;
 
     void handleRecordButtonClicked();
 

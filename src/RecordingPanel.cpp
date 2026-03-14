@@ -61,6 +61,15 @@ void RecordingPanel::stopRecording()
 }
 
 //==============================================================================
+void RecordingPanel::diskSpaceWarning(int remainingMinutes)
+{
+    if (remainingMinutes > 10) diskWarningLevel = 0;
+    else if (remainingMinutes >= 2) diskWarningLevel = 1;
+    else diskWarningLevel = 2;
+    repaint();
+}
+
+//==============================================================================
 void RecordingPanel::audioLevelsChanged(float rmsL, float rmsR)
 {
     // Use average of L and R channels
@@ -232,7 +241,12 @@ void RecordingPanel::paintDiskSpaceBar(juce::Graphics& g, juce::Rectangle<int> a
         usageFraction = juce::jlimit(0.0f, 1.0f, usageFraction);
         if (usageFraction > 0.0f)
         {
-            g.setColour(BdgColours::primary);
+            juce::Colour barColour;
+            if (diskWarningLevel == 2)      barColour = BdgColours::vuRed;
+            else if (diskWarningLevel == 1) barColour = BdgColours::vuYellow;
+            else                            barColour = BdgColours::primary;
+
+            g.setColour(barColour);
             g.fillRoundedRectangle(barX, barY, barW * usageFraction, barH, 3.0f);
         }
     }

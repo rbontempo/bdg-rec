@@ -353,6 +353,7 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     }
 
     recording.store(true);
+    startTimer(10000); // poll disk space every 10 seconds
     DBG("  Chunk recording started. chunkFolder=" + chunkFolder.getFullPathName()
         + " samplesPerChunk=" + juce::String(samplesPerChunk));
     return true;
@@ -482,6 +483,7 @@ juce::File AudioEngine::concatenateChunks()
 
 juce::File AudioEngine::stopRecording()
 {
+    stopTimer();
     recording.store(false);
 
     // Flush and close current chunk
@@ -507,6 +509,161 @@ juce::File AudioEngine::stopRecording()
 bool AudioEngine::isRecording() const
 {
     return recording.load();
+}
+
+//==============================================================================
+// Task 2: Disk space polling timer
+//==============================================================================
+void AudioEngine::timerCallback()
+{
+    if (!recording.load()) return;
+
+    auto freeBytes = chunkFolder.getBytesFreeOnVolume();
+    int bytesPerSec = (int)(nativeSampleRate * 3.0); // 24-bit mono = 3 bytes/sample
+    int remainingSec = (bytesPerSec > 0) ? (int)(freeBytes / bytesPerSec) : 9999;
+    int remainingMin = remainingSec / 60;
+
+    listeners.call(&Listener::diskSpaceWarning, remainingMin);
+
+    if (remainingMin < 2)
+    {
+        stopTimer();
+        // Auto-stop on message thread
+        juce::MessageManager::callAsync([this]() {
+            if (recording.load())
+            {
+                stopRecording();
+                listeners.call(&Listener::recordingAutoStopped);
+            }
+        });
+    }
+}
+
+//==============================================================================
+// Task 3: Post-crash recovery
+//==============================================================================
+juce::Array<juce::File> AudioEngine::findOrphanedRecordings(const juce::File& destFolder)
+{
+    juce::Array<juce::File> orphans;
+
+    if (!destFolder.isDirectory())
+        return orphans;
+
+    for (const auto& entry : juce::RangedDirectoryIterator(destFolder, false, "*", juce::File::findDirectories))
+    {
+        juce::File dir = entry.getFile();
+        if (!dir.getFileName().startsWith("BDG_rec_"))
+            continue;
+
+        // Check for at least one chunk file (chunk_001.wav is always the first)
+        if (dir.getChildFile("chunk_001.wav").existsAsFile())
+            orphans.add(dir);
+    }
+
+    return orphans;
+}
+
+juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
+{
+    // Detect sample rate from first valid chunk
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+
+    double detectedSampleRate = 44100.0;
+    int detectedChunkCount = 0;
+
+    // Count chunks and detect sample rate
+    for (int i = 1; i <= 9999; ++i)
+    {
+        juce::File chunkFile = orphanedChunkFolder.getChildFile(
+            juce::String::formatted("chunk_%03d.wav", i));
+        if (!chunkFile.existsAsFile())
+            break;
+
+        if (detectedChunkCount == 0)
+        {
+            std::unique_ptr<juce::AudioFormatReader> reader(
+                formatManager.createReaderFor(chunkFile));
+            if (reader != nullptr)
+                detectedSampleRate = reader->sampleRate;
+        }
+        detectedChunkCount++;
+    }
+
+    if (detectedChunkCount == 0)
+    {
+        DBG("recoverRecording: no chunks found in " + orphanedChunkFolder.getFullPathName());
+        return {};
+    }
+
+    // Create output file next to the orphaned folder
+    juce::File finalFile = orphanedChunkFolder.getParentDirectory().getChildFile(
+        orphanedChunkFolder.getFileName() + ".wav");
+
+    auto outStream = std::unique_ptr<juce::FileOutputStream>(
+        finalFile.createOutputStream());
+
+    if (outStream == nullptr)
+    {
+        DBG("recoverRecording: failed to create output stream");
+        return {};
+    }
+
+    auto* finalWriter = wavFormat.createWriterFor(
+        outStream.get(),
+        detectedSampleRate,
+        1,    // mono
+        24,   // bit depth
+        {},
+        0);
+
+    if (finalWriter == nullptr)
+    {
+        DBG("recoverRecording: failed to create WAV writer");
+        return {};
+    }
+
+    outStream.release(); // writer owns the stream
+
+    for (int i = 1; i <= detectedChunkCount; ++i)
+    {
+        juce::File chunkFile = orphanedChunkFolder.getChildFile(
+            juce::String::formatted("chunk_%03d.wav", i));
+
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            formatManager.createReaderFor(chunkFile));
+
+        if (reader == nullptr)
+        {
+            DBG("recoverRecording: skipping corrupted chunk " + juce::String(i));
+            continue;
+        }
+
+        const juce::int64 totalSamples = reader->lengthInSamples;
+        const int blockSize = 65536;
+        juce::AudioBuffer<float> buffer(1, blockSize);
+
+        for (juce::int64 pos = 0; pos < totalSamples; pos += blockSize)
+        {
+            int samplesToRead = (int)juce::jmin((juce::int64)blockSize, totalSamples - pos);
+            reader->read(&buffer, 0, samplesToRead, pos, true, false);
+            finalWriter->writeFromAudioSampleBuffer(buffer, 0, samplesToRead);
+        }
+    }
+
+    delete finalWriter;
+
+    // Remove orphaned folder
+    orphanedChunkFolder.deleteRecursively();
+
+    DBG("recoverRecording: recovered to " + finalFile.getFullPathName());
+    return finalFile;
+}
+
+void AudioEngine::discardRecording(const juce::File& orphanedChunkFolder)
+{
+    orphanedChunkFolder.deleteRecursively();
+    DBG("discardRecording: deleted " + orphanedChunkFolder.getFullPathName());
 }
 
 //==============================================================================
