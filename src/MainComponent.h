@@ -8,7 +8,7 @@
 #include "OutputPanel.h"
 #include "AudioEngine.h"
 #include "DspOverlay.h"
-#include "ToastComponent.h"
+#include "InlineWarning.h"
 
 class MainComponent : public juce::Component,
                       public AudioEngine::Listener
@@ -39,7 +39,6 @@ private:
     RecordingPanel recordingPanel{audioEngine};
     OutputPanel    outputPanel;
     DspOverlay     dspOverlay;
-    ToastComponent toastComponent;
 
     // Task 18 – Settings persistence
     juce::ApplicationProperties appProperties;

@@ -19,6 +19,7 @@ RecordingPanel::RecordingPanel(AudioEngine& engine)
 
     addAndMakeVisible(waveformDisplay);
     addAndMakeVisible(recordButton);
+    addChildComponent(inlineWarning); // hidden by default
 
     recordButton.onClick = [this]()
     {
@@ -57,6 +58,7 @@ void RecordingPanel::stopRecording()
     waveformDisplay.setRecording(false);
     recordButton.setRecordingState(false);
     timerLabel.setVisible(true);
+    timerLabel.setColour(juce::Label::textColourId, BdgColours::textPrimary);
     repaint();
 }
 
@@ -103,10 +105,11 @@ void RecordingPanel::timerCallback()
             }
         }
 
-        // Blink: toggle timer label visibility every tick (500ms)
-        bool visible = (timerTick % 2 == 0);
-        timerLabel.setVisible(visible);
-        repaint(); // for the disk space bar area
+        // Blink: alternate pink/transparent every tick (500ms)
+        timerLabel.setVisible(true);
+        timerLabel.setColour(juce::Label::textColourId,
+            (timerTick % 2 == 0) ? BdgColours::primary : BdgColours::primary.withAlpha(0.3f));
+        repaint();
     }
 }
 
@@ -161,10 +164,10 @@ void RecordingPanel::paint(juce::Graphics& g)
         g.fillEllipse(ix, iy, iconSize, iconSize);
     }
 
-    // "GRAVACAO" label
+    // "GRAVAÇÃO" label
     g.setFont(juce::FontOptions().withHeight(11.0f).withStyle("Bold"));
     g.setColour(BdgColours::textPrimary);
-    g.drawText("GRAVACAO",
+    g.drawText("GRAVAÇÃO",
                juce::Rectangle<float>(padding + 18.0f, 0.0f, 100.0f, (float)headerH),
                juce::Justification::centredLeft, false);
 
@@ -193,12 +196,12 @@ void RecordingPanel::paintDiskSpaceBar(juce::Graphics& g, juce::Rectangle<int> a
         g.fillRoundedRectangle(iconX + 3.0f, iconY, 8.0f, 5.0f, 1.0f);
     }
 
-    // "Espaco livre:" text
+    // "Espaço livre:" text
     const float textX = r.getX() + 20.0f;
     g.setFont(juce::FontOptions().withHeight(12.0f));
     g.setColour(juce::Colours::white.withAlpha(0.45f));
     const float labelW = 76.0f;
-    g.drawText("Espaco livre:",
+    g.drawText("Espaço livre:",
                juce::Rectangle<float>(textX, r.getY(), labelW, r.getHeight()),
                juce::Justification::centredLeft, false);
 
@@ -268,6 +271,10 @@ void RecordingPanel::resized()
 
     // Bottom disk space area
     area.removeFromBottom(diskH);
+
+    // Inline warning — 20px above disk bar
+    auto warningArea = area.removeFromBottom(20);
+    inlineWarning.setBounds(warningArea.reduced(padding, 0));
 
     // RecordButton area (below waveform)
     auto buttonArea = area.removeFromBottom(buttonAreaH);

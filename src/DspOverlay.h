@@ -12,7 +12,7 @@ public:
     void paint(juce::Graphics& g) override;
 
     // Control
-    void show(bool normalize, bool noiseReduction, bool compressor);
+    void show(bool normalize, bool noiseReduction, bool compressor, bool deEsser);
     void setCurrentStep(const juce::String& step);
     void hide();
 

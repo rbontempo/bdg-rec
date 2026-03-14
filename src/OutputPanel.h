@@ -13,6 +13,7 @@ public:
     bool isNormalizeOn()       const { return normalizeOn; }
     bool isNoiseReductionOn()  const { return noiseReductionOn; }
     bool isCompressorOn()      const { return compressorOn; }
+    bool isDeEsserOn()         const { return deEsserOn; }
 
     // Folder getter
     juce::File getDestFolder() const { return destFolder; }
@@ -22,6 +23,7 @@ public:
     void setNormalize(bool v);
     void setNoiseReduction(bool v);
     void setCompressor(bool v);
+    void setDeEsser(bool v);
 
     // Callback for settings changes (Task 18)
     std::function<void()> onSettingsChanged;
@@ -58,14 +60,16 @@ private:
 
     FolderButton folderButton;
     ToggleRow    normalizeRow  { "Normalizar" };
-    ToggleRow    noiseRow      { "Reducao de Ruido" };
+    ToggleRow    noiseRow      { "Redução de ruído" };
     ToggleRow    compressorRow { "Compressor" };
+    ToggleRow    deEsserRow    { "De-Esser" };
 
     juce::File   destFolder;
 
     bool normalizeOn      = false;
     bool noiseReductionOn = false;
     bool compressorOn     = false;
+    bool deEsserOn        = false;
 
     void openFolderChooser();
 

@@ -4,11 +4,14 @@
 class Dsp
 {
 public:
-    /** Peak-normalize to -1 dB ceiling (0.891 linear). */
-    static void normalize(juce::AudioBuffer<float>& buffer);
+    /** RMS normalize to -16 dB target + brick-wall limiter at -1 dB. */
+    static void normalize(juce::AudioBuffer<float>& buffer, double sampleRate);
 
-    /** Voice compressor: threshold -20 dB, ratio 4:1, attack 5 ms, release 100 ms. */
+    /** 3-band compressor (low/mid/high) with auto makeup gain. Optimized for voice. */
     static void compress(juce::AudioBuffer<float>& buffer, double sampleRate);
+
+    /** De-esser: reduces sibilance (4-8 kHz) for voice. */
+    static void deEss(juce::AudioBuffer<float>& buffer, double sampleRate);
 
     /** RNNoise neural-network noise suppression (48 kHz, automatic). */
     static void noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate);

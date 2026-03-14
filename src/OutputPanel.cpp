@@ -71,10 +71,16 @@ OutputPanel::OutputPanel()
         compressorOn = v;
         if (onSettingsChanged) onSettingsChanged();
     };
+    deEsserRow.onToggle = [this](bool v)
+    {
+        deEsserOn = v;
+        if (onSettingsChanged) onSettingsChanged();
+    };
 
     addAndMakeVisible(normalizeRow);
     addAndMakeVisible(noiseRow);
     addAndMakeVisible(compressorRow);
+    addAndMakeVisible(deEsserRow);
 }
 
 void OutputPanel::openFolderChooser()
@@ -150,7 +156,7 @@ struct OutputPositions
         // TRATAMENTO sub-panel
         p.treatY = y;
         p.treatRowsY = y + treatHeaderH + treatSep + treatPad;
-        p.treatH = treatHeaderH + treatSep + treatPad + rowH * 3.0f + treatPad;
+        p.treatH = treatHeaderH + treatSep + treatPad + rowH * 4.0f + treatPad;
 
         return p;
     }
@@ -313,6 +319,13 @@ void OutputPanel::setCompressor(bool v)
     compressorRow.repaint();
 }
 
+void OutputPanel::setDeEsser(bool v)
+{
+    deEsserOn = v;
+    deEsserRow.value = v;
+    deEsserRow.repaint();
+}
+
 //==============================================================================
 void OutputPanel::resized()
 {
@@ -332,4 +345,6 @@ void OutputPanel::resized()
     noiseRow      .setBounds((int)rowX, (int)y, (int)rowW, (int)rowH);
     y += rowH;
     compressorRow .setBounds((int)rowX, (int)y, (int)rowW, (int)rowH);
+    y += rowH;
+    deEsserRow    .setBounds((int)rowX, (int)y, (int)rowW, (int)rowH);
 }

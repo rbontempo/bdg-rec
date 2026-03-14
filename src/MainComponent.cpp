@@ -22,9 +22,8 @@ MainComponent::MainComponent()
     addAndMakeVisible(recordingPanel);
     addAndMakeVisible(outputPanel);
 
-    // Overlay and toast on top (added last so they paint over everything)
+    // Overlay on top
     addChildComponent(dspOverlay);
-    addChildComponent(toastComponent);
 
     // Wire up record button
     recordingPanel.onRecordClicked = [this]() { handleRecordButtonClicked(); };
@@ -36,26 +35,37 @@ MainComponent::MainComponent()
     // Task 18 – load saved settings and apply to UI
     loadSettings();
 
-    // Task 3 – check for orphaned recordings from a previous crash
+    // Check for orphaned recordings from a previous crash
     juce::MessageManager::callAsync([this]() {
         auto orphans = audioEngine.findOrphanedRecordings(outputPanel.getDestFolder());
         if (!orphans.isEmpty())
         {
             auto folder = orphans.getFirst();
-            toastComponent.showWithActions(
-                "Gravacao anterior encontrada. Deseja recuperar?",
-                "Recuperar", [this, folder]() {
+            auto options = juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                .withTitle("BDG REC")
+                .withMessage("Gravação anterior encontrada. Deseja recuperar?")
+                .withButton("Recuperar")
+                .withButton("Descartar")
+                .withButton("Ignorar");
+
+            juce::AlertWindow::showAsync(options, [this, folder](int result)
+            {
+                if (result == 1) // Recuperar
+                {
                     auto recovered = audioEngine.recoverRecording(folder);
                     if (recovered.existsAsFile())
-                        toastComponent.showSuccess("Recuperado!", recovered.getFileName());
+                        recordingPanel.getInlineWarning().show(
+                            "Recuperado: " + recovered.getFileName(), InlineWarning::Info);
                     else
-                        toastComponent.showError("Falha na recuperacao.");
-                },
-                "Descartar", [this, folder]() {
-                    audioEngine.discardRecording(folder);
-                    toastComponent.showSuccess("Descartado.", "");
+                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                            "BDG REC", "Falha na recuperação.");
                 }
-            );
+                else if (result == 2) // Descartar
+                {
+                    audioEngine.discardRecording(folder);
+                }
+            });
         }
     });
 
@@ -132,7 +142,8 @@ void MainComponent::devicesChanged()
     {
         isRecording = false;
         recordingPanel.stopRecording();
-        toastComponent.showError("Dispositivo desconectado. Gravacao interrompida.");
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+            "BDG REC", "Dispositivo desconectado. Gravação interrompida.");
     }
 }
 
@@ -145,7 +156,9 @@ void MainComponent::diskSpaceWarning(int remainingMinutes)
     {
         diskWarningShown = true;
         juce::MessageManager::callAsync([this, remainingMinutes]() {
-            toastComponent.showError("Espaco em disco baixo. Restam ~" + juce::String(remainingMinutes) + "min.");
+            recordingPanel.getInlineWarning().show(
+                "Espaço em disco baixo. Restam ~" + juce::String(remainingMinutes) + "min.",
+                InlineWarning::Warning, 0); // no auto-hide during recording
         });
     }
 }
@@ -155,7 +168,9 @@ void MainComponent::recordingAutoStopped()
     juce::MessageManager::callAsync([this]() {
         isRecording = false;
         recordingPanel.stopRecording();
-        toastComponent.showError("Gravacao parada: disco quase cheio.");
+        recordingPanel.getInlineWarning().hide();
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+            "BDG REC", "Gravação parada automaticamente: disco quase cheio.");
     });
 }
 
@@ -170,7 +185,7 @@ void MainComponent::handleRecordButtonClicked()
         // Task 19 – Validate device
         if (audioEngine.getCurrentInputDeviceName().isEmpty())
         {
-            toastComponent.showError("Selecione um microfone.");
+            recordingPanel.getInlineWarning().show("Selecione um microfone.", InlineWarning::Warning);
             return;
         }
 
@@ -178,8 +193,26 @@ void MainComponent::handleRecordButtonClicked()
         juce::File folder = outputPanel.getDestFolder();
         if (!folder.exists() || !folder.isDirectory())
         {
-            toastComponent.showError("Configure a pasta de destino.");
+            recordingPanel.getInlineWarning().show("Configure a pasta de destino.", InlineWarning::Warning);
             return;
+        }
+
+        // Check disk space before recording (need at least 1 hour = ~520MB)
+        {
+            auto freeBytes = folder.getBytesFreeOnVolume();
+            double sampleRate = 48000.0;
+            if (auto* dev = audioEngine.getDeviceManager().getCurrentAudioDevice())
+                sampleRate = dev->getCurrentSampleRate();
+            int bytesPerSec = (int)(sampleRate * 3.0); // 24-bit mono
+            int remainingMin = (int)(freeBytes / bytesPerSec / 60);
+
+            if (remainingMin < 60)
+            {
+                recordingPanel.getInlineWarning().show(
+                    "Espaço insuficiente (~" + juce::String(remainingMin) + "min). Libere espaco.",
+                    InlineWarning::Error);
+                return;
+            }
         }
 
         // Task 19 – startRecording error handling
@@ -195,7 +228,8 @@ void MainComponent::handleRecordButtonClicked()
         else
         {
             DBG("Recording FAILED to start");
-            toastComponent.showError("Falha ao iniciar gravacao.");
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                "BDG REC", "Falha ao iniciar gravação.");
         }
     }
     else
@@ -221,19 +255,21 @@ void MainComponent::handleRecordButtonClicked()
             catch (const std::exception& e)
             {
                 dspOverlay.hide();
-                toastComponent.showError(juce::String("Erro no processamento: ") + e.what());
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "BDG REC", juce::String("Erro no processamento: ") + e.what());
             }
             catch (...)
             {
                 dspOverlay.hide();
-                toastComponent.showError("Erro desconhecido no processamento.");
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "BDG REC", "Erro desconhecido no processamento.");
             }
         }
         else if (lastRecordedFile.existsAsFile())
         {
-            // No processing — just report success
-            toastComponent.showSuccess("Gravacao concluida.",
-                                       lastRecordedFile.getFileName());
+            // No processing — report success inline
+            recordingPanel.getInlineWarning().show(
+                "Salvo: " + lastRecordedFile.getFileName(), InlineWarning::Info);
         }
     }
 }
@@ -266,7 +302,8 @@ void MainComponent::dspFinished(const juce::File& file)
     juce::MessageManager::callAsync([this, file]()
     {
         dspOverlay.hide();
-        toastComponent.showSuccess("Processamento concluido.", file.getFileName());
+        recordingPanel.getInlineWarning().show(
+            "Salvo: " + file.getFileName(), InlineWarning::Info);
     });
 }
 
@@ -275,7 +312,8 @@ void MainComponent::dspError(const juce::String& error)
     juce::MessageManager::callAsync([this, error]()
     {
         dspOverlay.hide();
-        toastComponent.showError("Erro no processamento: " + error);
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+            "BDG REC", "Erro no processamento: " + error);
     });
 }
 
@@ -310,10 +348,4 @@ void MainComponent::resized()
     // Overlay: covers entire window
     dspOverlay.setBounds(0, 0, w, h);
 
-    // Toast: bottom-center (allocate tall height to cover both normal and action variants)
-    const int toastX = (w - ToastComponent::toastWidth)  / 2;
-    const int toastY =  h - ToastComponent::toastHeightTall - 20;
-    toastComponent.setBounds(toastX, toastY,
-                             ToastComponent::toastWidth,
-                             ToastComponent::toastHeightTall);
 }

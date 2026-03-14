@@ -3,9 +3,10 @@
 DspOverlay::DspOverlay()
 {
     // Build the step list (all steps; some may be hidden)
-    steps.add({ "Normalizacao",        true,  StepState::Pending });
-    steps.add({ "Reducao de ruido",    true,  StepState::Pending });
+    steps.add({ "Normalização",        true,  StepState::Pending });
+    steps.add({ "Redução de ruído",    true,  StepState::Pending });
     steps.add({ "Compressor",          true,  StepState::Pending });
+    steps.add({ "De-Esser",           true,  StepState::Pending });
     steps.add({ "Salvando arquivo",    true,  StepState::Pending });
 
     setVisible(false);
@@ -17,7 +18,7 @@ DspOverlay::~DspOverlay()
     stopTimer();
 }
 
-void DspOverlay::show(bool normalize, bool noiseReduction, bool compressor)
+void DspOverlay::show(bool normalize, bool noiseReduction, bool compressor, bool deEsser)
 {
     // Reset steps
     for (auto& s : steps)
@@ -26,14 +27,11 @@ void DspOverlay::show(bool normalize, bool noiseReduction, bool compressor)
         s.enabled = true;
     }
 
-    // steps[0] = "Normalizacao"       -> visible only if normalize
-    // steps[1] = "Reducao de ruido"   -> visible only if noiseReduction
-    // steps[2] = "Compressor"         -> visible only if compressor
-    // steps[3] = "Salvando arquivo"   -> always visible
     steps.getReference(0).enabled = normalize;
     steps.getReference(1).enabled = noiseReduction;
     steps.getReference(2).enabled = compressor;
-    steps.getReference(3).enabled = true;
+    steps.getReference(3).enabled = deEsser;
+    steps.getReference(4).enabled = true;
 
     spinAngle  = 0.0f;
     pulseAlpha = 1.0f;
@@ -139,11 +137,11 @@ void DspOverlay::paint(juce::Graphics& g)
     }
     y += titleH;
 
-    // --- "Processando audio" ---
+    // --- "Processando áudio" ---
     {
         g.setFont(juce::FontOptions().withHeight(12.0f));
         g.setColour(juce::Colours::white.withAlpha(0.50f));
-        g.drawText("Processando audio",
+        g.drawText("Processando áudio",
                    juce::Rectangle<float>(cx - 100.0f, y, 200.0f, subtitleH),
                    juce::Justification::centred, false);
     }

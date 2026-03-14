@@ -38,8 +38,14 @@ juce_add_gui_app(BDG_REC
     PRODUCT_NAME "BDG REC"
     COMPANY_NAME "BDG"
     BUNDLE_ID "com.bdg.rec"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns"
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "BDG REC precisa acessar o microfone para gravar audio."
+)
+
+juce_add_binary_data(BDG_REC_BinaryData SOURCES
+    resources/logo-bdg-rec.png
 )
 
 target_sources(BDG_REC PRIVATE
@@ -56,7 +62,6 @@ target_sources(BDG_REC PRIVATE
     src/WaveformDisplay.cpp
     src/RecordButton.cpp
     src/DspOverlay.cpp
-    src/ToastComponent.cpp
 )
 
 target_compile_definitions(BDG_REC PRIVATE
@@ -70,6 +75,7 @@ target_compile_definitions(BDG_REC PRIVATE
 target_include_directories(BDG_REC PRIVATE external/rnnoise/include)
 
 target_link_libraries(BDG_REC PRIVATE
+    BDG_REC_BinaryData
     rnnoise
     juce::juce_core
     juce::juce_data_structures
@@ -82,4 +88,12 @@ target_link_libraries(BDG_REC PRIVATE
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
+)
+
+# Copy app icon into bundle after build
+add_custom_command(TARGET BDG_REC POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns"
+        "$<TARGET_BUNDLE_DIR:BDG_REC>/Contents/Resources/Icon.icns"
+    COMMENT "Copying app icon"
 )

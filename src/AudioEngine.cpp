@@ -299,7 +299,7 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
         {
             stopRecording();
             listeners.call(&Listener::dspError,
-                           juce::String("Dispositivo de audio desconectado durante gravacao."));
+                           juce::String("Dispositivo de áudio desconectado durante gravação."));
         }
     }
 

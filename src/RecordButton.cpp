@@ -32,17 +32,16 @@ void RecordButton::mouseUp(const juce::MouseEvent& e)
 
 void RecordButton::paint(juce::Graphics& g)
 {
-    const float scale = hovered ? 1.06f : 1.0f;
-    const float size  = 64.0f;
-    const float cx    = getWidth()  * 0.5f;
-    const float cy    = getHeight() * 0.5f;
-    const float half  = (size * scale) * 0.5f;
+    const float iconScale = hovered ? 1.15f : 1.0f;
+    const float size = 64.0f;
+    const float cx   = getWidth()  * 0.5f;
+    const float cy   = getHeight() * 0.5f;
+    const float half = size * 0.5f;
 
-    auto bounds = juce::Rectangle<float>(cx - half, cy - half, size * scale, size * scale);
+    auto bounds = juce::Rectangle<float>(cx - half, cy - half, size, size);
 
     if (!isRecordingState)
     {
-        // --- Idle: circle ---
         // Shadow / glow
         {
             const float glowR = half + 8.0f;
@@ -55,18 +54,17 @@ void RecordButton::paint(juce::Graphics& g)
             g.fillEllipse(cx - glowR, cy - glowR, glowR * 2.0f, glowR * 2.0f);
         }
 
-        // Pink circle fill
+        // Pink circle (fixed size)
         g.setColour(BdgColours::primary);
         g.fillEllipse(bounds);
 
-        // White inner circle (20px)
-        const float innerR = 10.0f * scale;
+        // White inner circle — scales on hover
+        const float innerR = 10.0f * iconScale;
         g.setColour(juce::Colours::white);
         g.fillEllipse(cx - innerR, cy - innerR, innerR * 2.0f, innerR * 2.0f);
     }
     else
     {
-        // --- Recording: rounded rect (stop button) ---
         // Stronger glow
         {
             const float glowR = half + 14.0f;
@@ -79,12 +77,12 @@ void RecordButton::paint(juce::Graphics& g)
             g.fillEllipse(cx - glowR, cy - glowR, glowR * 2.0f, glowR * 2.0f);
         }
 
-        // Pink rounded rect fill
+        // Pink rounded rect (fixed size)
         g.setColour(BdgColours::primary);
         g.fillRoundedRectangle(bounds, 12.0f);
 
-        // White inner square (20px, corner 3px)
-        const float innerHalf = 10.0f * scale;
+        // White inner square — scales on hover
+        const float innerHalf = 10.0f * iconScale;
         g.setColour(juce::Colours::white);
         g.fillRoundedRectangle(cx - innerHalf, cy - innerHalf,
                                innerHalf * 2.0f, innerHalf * 2.0f, 3.0f);

@@ -1,6 +1,11 @@
 #include "WaveformDisplay.h"
+#include "BinaryData.h"
 
-WaveformDisplay::WaveformDisplay() {}
+WaveformDisplay::WaveformDisplay()
+{
+    logoImage = juce::ImageCache::getFromMemory(
+        BinaryData::logobdgrec_png, BinaryData::logobdgrec_pngSize);
+}
 
 juce::Colour WaveformDisplay::vuColor(float rms) const
 {
@@ -37,40 +42,32 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
     if (!isRecording)
     {
-        // --- Idle state ---
+        // --- Idle state: show logo ---
         g.setColour(BdgColours::bgPanel);
         g.fillRoundedRectangle(bounds, 4.0f);
 
-        const float cx = bounds.getCentreX();
-        const float cy = bounds.getCentreY() - 14.0f;
-
-        // Outer dashed circle (56px diameter)
+        if (logoImage.isValid())
         {
-            const float r = 28.0f;
-            juce::Path circle;
-            circle.addEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f);
+            // Scale logo to fit, max 120px wide, centered
+            const float maxW = 120.0f;
+            const float scale = std::min(maxW / logoImage.getWidth(), 1.0f);
+            const float imgW = logoImage.getWidth() * scale;
+            const float imgH = logoImage.getHeight() * scale;
+            const float imgX = bounds.getCentreX() - imgW * 0.5f;
+            const float imgY = bounds.getCentreY() - imgH * 0.5f - 10.0f;
 
-            juce::PathStrokeType stroke(2.0f);
-            float dashes[] = { 4.0f, 4.0f };
-            juce::Path dashed;
-            stroke.createDashedStroke(dashed, circle, dashes, 2);
-
-            g.setColour(juce::Colours::white.withAlpha(0.20f));
-            g.fillPath(dashed);
+            g.setOpacity(0.35f);
+            g.drawImage(logoImage,
+                        juce::Rectangle<float>(imgX, imgY, imgW, imgH),
+                        juce::RectanglePlacement::centred);
+            g.setOpacity(1.0f);
         }
 
-        // Inner solid circle (16px diameter)
-        {
-            const float r = 8.0f;
-            g.setColour(juce::Colours::white.withAlpha(0.20f));
-            g.drawEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f, 2.0f);
-        }
-
-        // "Pronto para gravar" text
+        // "Pronto para gravar" text below logo
         g.setColour(juce::Colours::white.withAlpha(0.35f));
         g.setFont(juce::FontOptions().withHeight(12.0f));
         g.drawText("Pronto para gravar",
-                   bounds.withY(cy + 32.0f).withHeight(20.0f),
+                   bounds.removeFromBottom(30.0f),
                    juce::Justification::centred, false);
     }
     else

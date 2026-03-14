@@ -172,7 +172,7 @@ void InputPanel::paint(juce::Graphics& g)
 
     // ---- VU Meter label ----
     const float vuLabelY = (float)vuMeter.getY() - 18.0f;
-    g.drawText("NIVEL",
+    g.drawText("NÍVEL",
                juce::Rectangle<float>(pad, vuLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredLeft, false);
 

@@ -15,6 +15,7 @@ public:
 private:
     bool isRecording = false;
     std::vector<float> rmsSamples;
+    juce::Image logoImage;
 
     juce::Colour vuColor(float rms) const;
 
