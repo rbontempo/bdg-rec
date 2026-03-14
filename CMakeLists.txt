@@ -32,6 +32,8 @@ target_sources(BDG_REC PRIVATE
     src/VuMeter.cpp
     src/WaveformDisplay.cpp
     src/RecordButton.cpp
+    src/DspOverlay.cpp
+    src/ToastComponent.cpp
 )
 
 target_compile_definitions(BDG_REC PRIVATE
