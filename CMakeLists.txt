@@ -32,7 +32,11 @@ target_include_directories(rnnoise PUBLIC
 )
 target_compile_definitions(rnnoise PRIVATE COMPILE_OPUS)
 # Suppress warnings from third-party C code
-target_compile_options(rnnoise PRIVATE -w)
+if(MSVC)
+    target_compile_options(rnnoise PRIVATE /w)
+else()
+    target_compile_options(rnnoise PRIVATE -w)
+endif()
 
 juce_add_gui_app(BDG_REC
     PRODUCT_NAME "BDG REC"
@@ -72,7 +76,11 @@ target_compile_definitions(BDG_REC PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
-target_compile_options(BDG_REC PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+if(NOT MSVC)
+    target_compile_options(BDG_REC PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+else()
+    target_compile_options(BDG_REC PRIVATE /utf-8)
+endif()
 target_include_directories(BDG_REC PRIVATE external/rnnoise/include)
 
 target_link_libraries(BDG_REC PRIVATE
@@ -99,9 +107,4 @@ if(APPLE)
             "$<TARGET_BUNDLE_DIR:BDG_REC>/Contents/Resources/Icon.icns"
         COMMENT "Copying app icon"
     )
-elseif(WIN32)
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/icon.rc"
-        "IDI_ICON1 ICON \"${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.ico\"\n"
-    )
-    target_sources(BDG_REC PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/icon.rc")
 endif()
