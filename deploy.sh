@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploy BDG REC site to SiteGround
+# Deploy BDG rec site to SiteGround
 # Usage: ./deploy.sh
 
 HOST="ssh.rec.bdg.fm"
@@ -16,7 +16,7 @@ FILES=(
   "layout-bdg-rec.png"
 )
 
-echo "Deploying BDG REC site to $HOST..."
+echo "Deploying BDG rec site to $HOST..."
 
 for f in "${FILES[@]}"; do
   echo "  Uploading $f..."
