@@ -122,7 +122,7 @@
           <label class="text-xs text-muted block mb-1.5">Email</label>
           <input type="email" id="login-email" required
             class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
-            placeholder="admin@bdg.fm">
+            placeholder="rbontempo@gmail.com">
         </div>
         <div>
           <label class="text-xs text-muted block mb-1.5">Senha</label>
@@ -165,8 +165,12 @@
           Licenças
         </a>
       </nav>
-      <div class="mt-auto px-3 py-3 border-t border-border">
-        <a href="/" class="sidebar-link !px-0">
+      <div class="mt-auto border-t border-border pt-2">
+        <a class="sidebar-link" data-page="profile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Perfil
+        </a>
+        <a href="/" class="sidebar-link">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           Voltar ao site
         </a>
@@ -175,7 +179,45 @@
 
     <!-- Main content -->
     <main class="flex-1 overflow-y-auto p-8">
-      <div class="max-w-6xl mx-auto">
+
+      <!-- Profile page -->
+      <div id="page-profile" class="max-w-lg mx-auto" style="display:none">
+        <h1 class="text-2xl font-bold tracking-[-0.02em] mb-2">Perfil</h1>
+        <p class="text-muted text-sm mb-8">Gerencie sua conta</p>
+
+        <div class="chart-card mb-6">
+          <h3 class="font-semibold text-sm mb-4">Alterar senha</h3>
+          <form id="change-password-form" class="space-y-4">
+            <div>
+              <label class="text-xs text-muted block mb-1.5">Senha atual</label>
+              <input type="password" id="current-password" required
+                class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+                placeholder="••••••••">
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1.5">Nova senha</label>
+              <input type="password" id="new-password" required minlength="6"
+                class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+                placeholder="Mínimo 6 caracteres">
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1.5">Confirmar nova senha</label>
+              <input type="password" id="confirm-password" required minlength="6"
+                class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+                placeholder="••••••••">
+            </div>
+            <div id="password-error" class="text-xs text-red-500 hidden"></div>
+            <div id="password-success" class="text-xs text-green-500 hidden">Senha alterada com sucesso</div>
+            <button type="submit"
+              class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-bdg-primary hover:opacity-90 transition-opacity">
+              Salvar nova senha
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Overview page -->
+      <div id="page-overview" class="max-w-6xl mx-auto">
 
         <!-- Header -->
         <div class="flex items-center justify-between mb-8 fade-in">
@@ -413,7 +455,7 @@
           </div>
         </div>
 
-      </div>
+      </div><!-- /page-overview -->
     </main>
   </div>
 
@@ -643,12 +685,56 @@
       });
     });
 
-    // Sidebar nav
+    // Sidebar nav + page switching
+    function showPage(page) {
+      document.getElementById('page-overview').style.display = page === 'overview' ? '' : 'none';
+      document.getElementById('page-profile').style.display = page === 'profile' ? '' : 'none';
+    }
+
     document.querySelectorAll('[data-page]').forEach(link => {
       link.addEventListener('click', () => {
         document.querySelectorAll('[data-page]').forEach(l => l.classList.remove('active'));
         link.classList.add('active');
+        showPage(link.dataset.page);
       });
+    });
+
+    // Change password
+    document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('password-error');
+      const okEl = document.getElementById('password-success');
+      errEl.classList.add('hidden');
+      okEl.classList.add('hidden');
+
+      const currentPassword = document.getElementById('current-password').value;
+      const newPassword = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+
+      if (newPassword !== confirmPassword) {
+        errEl.textContent = 'As senhas não coincidem';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/change-password.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          okEl.classList.remove('hidden');
+          document.getElementById('change-password-form').reset();
+        } else {
+          errEl.textContent = data.error || 'Erro ao alterar senha';
+          errEl.classList.remove('hidden');
+        }
+      } catch {
+        errEl.textContent = 'Erro de conexão';
+        errEl.classList.remove('hidden');
+      }
     });
   </script>
 
