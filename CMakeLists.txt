@@ -67,6 +67,7 @@ target_sources(BDG_REC PRIVATE
     src/RecordButton.cpp
     src/DspOverlay.cpp
     src/UpdateChecker.cpp
+    src/AnalyticsReporter.cpp
 )
 
 target_compile_definitions(BDG_REC PRIVATE
