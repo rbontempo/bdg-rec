@@ -1,0 +1,23 @@
+COMO INSTALAR O BDG rec
+=======================
+
+1. Arraste o BDG rec para a pasta Applications.
+
+2. Na primeira vez que abrir, o macOS pode bloquear o app
+   com a mensagem "BDG rec Not Opened".
+
+   Para resolver:
+   - Clique com o botao direito (ou Control+clique) no BDG rec
+   - Selecione "Abrir"
+   - No dialog que aparecer, clique "Abrir" novamente
+
+   Isso so precisa ser feito uma vez.
+   Depois disso o app abre normalmente.
+
+Por que isso acontece?
+O BDG rec e um app gratuito e open source, mas nao possui
+assinatura da Apple (Apple Developer Program, $99/ano).
+O macOS bloqueia apps nao assinados por seguranca, mas voce
+pode autorizar manualmente como descrito acima.
+
+Codigo fonte: https://github.com/rbontempo/bdg-rec

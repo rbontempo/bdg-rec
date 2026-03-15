@@ -36,6 +36,7 @@ jobs:
             --icon-size 80 \
             --icon "BDG rec.app" 430 130 \
             --app-drop-link 170 130 \
+            --add-file "LEIA-ME.txt" "resources/LEIA-ME.txt" 300 290 \
             --text-size 13 \
             --no-internet-enable \
             "dist/BDG_REC_macOS.dmg" \
