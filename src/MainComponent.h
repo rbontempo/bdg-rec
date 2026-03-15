@@ -10,6 +10,7 @@
 #include "DspOverlay.h"
 #include "InlineWarning.h"
 #include "UpdateChecker.h"
+#include "AnalyticsReporter.h"
 
 class MainComponent : public juce::Component,
                       public AudioEngine::Listener
@@ -40,7 +41,8 @@ private:
     RecordingPanel recordingPanel{audioEngine};
     OutputPanel    outputPanel;
     DspOverlay     dspOverlay;
-    UpdateChecker  updateChecker;
+    UpdateChecker      updateChecker;
+    AnalyticsReporter  analyticsReporter;
 
     // Task 18 – Settings persistence
     juce::ApplicationProperties appProperties;
@@ -51,6 +53,7 @@ private:
     bool           diskWarningShown = false;
 
     void handleRecordButtonClicked();
+    void updateAnalyticsContext();
 
     // Task 18 – persist / restore settings
     void saveSettings();

@@ -61,6 +61,7 @@ private:
 
 public:
     InlineWarning& getInlineWarning() { return inlineWarning; }
+    int getElapsedSeconds() const { return elapsedSecs; }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RecordingPanel)
 };

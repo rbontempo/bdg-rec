@@ -42,7 +42,7 @@ MainComponent::MainComponent()
     };
 
     // Task 18 – save on every settings change
-    inputPanel.onSettingsChanged  = [this]() { saveSettings(); };
+    inputPanel.onSettingsChanged  = [this]() { saveSettings(); updateAnalyticsContext(); };
     outputPanel.onSettingsChanged = [this]()
     {
         recordingPanel.setDestFolder(outputPanel.getDestFolder());
@@ -94,6 +94,11 @@ MainComponent::MainComponent()
         showUpdateDialog(newVersion);
     });
 
+    // Analytics
+    analyticsReporter.initialise(appProperties, "https://rec.bdg.fm/api/events.php");
+    updateAnalyticsContext();
+    analyticsReporter.trackEvent("app_open");
+
     setSize(720, 420);
 }
 
@@ -102,8 +107,23 @@ MainComponent::~MainComponent()
     audioEngine.removeListener(this);
     setLookAndFeel(nullptr);
 
+    analyticsReporter.flush();
+
     // Flush settings to disk
     appProperties.closeFiles();
+}
+
+//==============================================================================
+// Analytics
+//==============================================================================
+void MainComponent::updateAnalyticsContext()
+{
+    analyticsReporter.setContext(
+        juce::SystemStats::getOperatingSystemName(),
+        juce::String(JUCE_APPLICATION_VERSION_STRING),
+        audioEngine.getCurrentInputDeviceName(),
+        Strings::getLanguage() == Language::EN ? "en" : "pt-BR"
+    );
 }
 
 //==============================================================================
@@ -173,6 +193,13 @@ void MainComponent::devicesChanged()
     // If we were recording and the device is gone, show error
     if (isRecording && audioEngine.getCurrentInputDeviceName().isEmpty())
     {
+        analyticsReporter.trackEvent("error", [&]() {
+            auto extra = new juce::DynamicObject();
+            extra->setProperty("error_code", "device_lost");
+            extra->setProperty("message", "Device disconnected during recording");
+            return juce::var(extra);
+        }());
+
         isRecording = false;
         recordingPanel.stopRecording();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
@@ -270,6 +297,14 @@ void MainComponent::handleRecordButtonClicked()
         // Stop recording
         lastRecordedFile = audioEngine.stopRecording();
         isRecording = false;
+
+        // Track recording end
+        {
+            auto extra = new juce::DynamicObject();
+            extra->setProperty("duration_seconds", recordingPanel.getElapsedSeconds());
+            analyticsReporter.trackEvent("recording_end", juce::var(extra));
+        }
+
         recordingPanel.stopRecording();
 
         // Run DSP if any treatment is enabled
@@ -303,6 +338,13 @@ void MainComponent::handleRecordButtonClicked()
             // No processing — report success inline
             recordingPanel.getInlineWarning().show(
                 Strings::get().salvo + lastRecordedFile.getFileName(), InlineWarning::Info);
+
+            // Track export complete (no DSP)
+            {
+                auto extra = new juce::DynamicObject();
+                extra->setProperty("file_size_mb", (double)lastRecordedFile.getSize() / (1024.0 * 1024.0));
+                analyticsReporter.trackEvent("export_complete", juce::var(extra));
+            }
         }
     }
 }
@@ -337,6 +379,25 @@ void MainComponent::dspFinished(const juce::File& file)
         dspOverlay.hide();
         recordingPanel.getInlineWarning().show(
             Strings::get().salvo + file.getFileName(), InlineWarning::Info);
+
+        // Track DSP applied
+        {
+            auto extra = new juce::DynamicObject();
+            juce::Array<juce::var> effects;
+            if (outputPanel.isNormalizeOn())      effects.add("normalize");
+            if (outputPanel.isNoiseReductionOn()) effects.add("denoise");
+            if (outputPanel.isCompressorOn())     effects.add("compress");
+            if (outputPanel.isDeEsserOn())        effects.add("deesser");
+            extra->setProperty("effects", effects);
+            analyticsReporter.trackEvent("dsp_applied", juce::var(extra));
+        }
+
+        // Track export complete
+        {
+            auto extra = new juce::DynamicObject();
+            extra->setProperty("file_size_mb", (double)file.getSize() / (1024.0 * 1024.0));
+            analyticsReporter.trackEvent("export_complete", juce::var(extra));
+        }
     });
 }
 
@@ -347,6 +408,13 @@ void MainComponent::dspError(const juce::String& error)
         dspOverlay.hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
             "BDG REC", Strings::get().erroProcessamento + error);
+
+        analyticsReporter.trackEvent("error", [&]() {
+            auto extra = new juce::DynamicObject();
+            extra->setProperty("error_code", "dsp_crash");
+            extra->setProperty("message", error);
+            return juce::var(extra);
+        }());
     });
 }
 
