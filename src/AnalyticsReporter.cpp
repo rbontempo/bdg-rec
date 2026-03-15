@@ -28,7 +28,7 @@ void AnalyticsReporter::initialise(juce::ApplicationProperties& props, const juc
 {
     appProps = &props;
     apiUrl = analyticsUrl;
-    apiKey = "brec_REPLACE_WITH_PRODUCTION_KEY";
+    apiKey = "brec_c31fac359dacbe16bfa1afd5e59e0b2c";
 
     if (auto* pf = props.getUserSettings())
     {
