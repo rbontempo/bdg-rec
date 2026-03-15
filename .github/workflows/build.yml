@@ -21,14 +21,24 @@ jobs:
       - name: Build
         run: cmake --build build --target BDG_REC --config Release
 
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Create DMG
         run: |
           mkdir -p dist
-          DMG_DIR=$(mktemp -d)
-          cp -R "build/BDG_REC_artefacts/Release/BDG REC.app" "$DMG_DIR/"
-          ln -s /Applications "$DMG_DIR/Applications"
-          hdiutil create -volname "BDG REC" -srcfolder "$DMG_DIR" -ov -format UDZO "dist/BDG_REC_macOS.dmg"
-          rm -rf "$DMG_DIR"
+          create-dmg \
+            --volname "BDG REC" \
+            --background "resources/fundo-instalacao.png" \
+            --window-pos 200 120 \
+            --window-size 600 323 \
+            --icon-size 80 \
+            --icon "BDG REC.app" 430 130 \
+            --app-drop-link 170 130 \
+            --text-size 13 \
+            --no-internet-enable \
+            "dist/BDG_REC_macOS.dmg" \
+            "build/BDG_REC_artefacts/Release/BDG REC.app"
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
