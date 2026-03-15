@@ -27,6 +27,7 @@ jobs:
       - name: Create DMG
         run: |
           mkdir -p dist
+          rm -f dist/BDG_REC_macOS.dmg
           create-dmg \
             --volname "BDG rec" \
             --background "resources/fundo-instalacao.png" \
