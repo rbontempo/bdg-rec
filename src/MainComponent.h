@@ -41,11 +41,11 @@ private:
     RecordingPanel recordingPanel{audioEngine};
     OutputPanel    outputPanel;
     DspOverlay     dspOverlay;
+    // Settings persistence (must be declared before analyticsReporter)
+    juce::ApplicationProperties appProperties;
+
     UpdateChecker      updateChecker;
     AnalyticsReporter  analyticsReporter;
-
-    // Task 18 – Settings persistence
-    juce::ApplicationProperties appProperties;
 
     // Recording state
     juce::File     lastRecordedFile;

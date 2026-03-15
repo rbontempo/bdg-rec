@@ -3,7 +3,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 #include <functional>
 
-class AnalyticsReporter : private juce::Timer
+class AnalyticsReporter : private juce::Thread
 {
 public:
     AnalyticsReporter();
@@ -17,7 +17,7 @@ public:
     void flush();
 
 private:
-    void timerCallback() override;
+    void run() override;
     void sendBatch();
     juce::String generateMachineId();
     void loadPendingEvents();
@@ -35,9 +35,9 @@ private:
 
     juce::CriticalSection queueLock;
     juce::Array<juce::var> eventQueue;
-    std::atomic<bool> isSending { false };
 
     static constexpr int BATCH_INTERVAL_MS = 30000;
+    static constexpr int MAX_QUEUE_SIZE = 500;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyticsReporter)
 };

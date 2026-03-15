@@ -16,11 +16,11 @@ static const char* funnyWords[] = {
 
 static constexpr int NUM_FUNNY_WORDS = sizeof(funnyWords) / sizeof(funnyWords[0]);
 
-AnalyticsReporter::AnalyticsReporter() = default;
+AnalyticsReporter::AnalyticsReporter() : Thread("AnalyticsReporter") {}
 
 AnalyticsReporter::~AnalyticsReporter()
 {
-    stopTimer();
+    stopThread(5000);
     flush();
 }
 
@@ -42,7 +42,7 @@ void AnalyticsReporter::initialise(juce::ApplicationProperties& props, const juc
     }
 
     loadPendingEvents();
-    startTimer(BATCH_INTERVAL_MS);
+    startThread(juce::Thread::Priority::low);
 }
 
 juce::String AnalyticsReporter::generateMachineId()
@@ -73,21 +73,25 @@ void AnalyticsReporter::trackEvent(const juce::String& eventType, const juce::va
     evt->setProperty("app_version", appVersion);
     evt->setProperty("hardware", hardwareName);
     evt->setProperty("locale", localeName);
+    evt->setProperty("timestamp", juce::Time::currentTimeMillis());
     if (!extra.isVoid())
         evt->setProperty("extra", extra);
 
     juce::ScopedLock lock(queueLock);
     eventQueue.add(juce::var(evt));
+
+    // Cap queue size to prevent unbounded growth when offline
+    while (eventQueue.size() > MAX_QUEUE_SIZE)
+        eventQueue.remove(0);
 }
 
-void AnalyticsReporter::timerCallback()
+void AnalyticsReporter::run()
 {
-    if (!isSending.exchange(true))
+    while (!threadShouldExit())
     {
-        juce::Thread::launch([this]() {
-            sendBatch();
-            isSending = false;
-        });
+        wait(BATCH_INTERVAL_MS);
+        if (threadShouldExit()) break;
+        sendBatch();
     }
 }
 
@@ -126,8 +130,8 @@ void AnalyticsReporter::sendBatch()
     }
 
     auto response = stream->readEntireStreamAsString();
-    // Silent: response checked below
-    if (!response.contains("\"ok\""))
+    auto responseJson = juce::JSON::parse(response);
+    if (!responseJson.getProperty("ok", false))
     {
         juce::ScopedLock lock(queueLock);
         for (auto& evt : batch)
@@ -142,6 +146,7 @@ void AnalyticsReporter::flush()
 
 void AnalyticsReporter::loadPendingEvents()
 {
+    if (appProps == nullptr) return;
     if (auto* pf = appProps->getUserSettings())
     {
         auto pending = pf->getValue("pendingAnalytics", "");
@@ -162,6 +167,7 @@ void AnalyticsReporter::loadPendingEvents()
 
 void AnalyticsReporter::savePendingEvents()
 {
+    if (appProps == nullptr) return;
     juce::ScopedLock lock(queueLock);
     if (eventQueue.isEmpty()) return;
 
