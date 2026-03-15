@@ -28,7 +28,7 @@ void UpdateChecker::checkIfDue(juce::ApplicationProperties& props,
 
 void UpdateChecker::run()
 {
-    auto url = juce::URL("https://api.github.com/repos/rbontempo/bdg-rec-juce/releases/latest");
+    auto url = juce::URL("https://api.github.com/repos/rbontempo/bdg-rec/releases/latest");
     auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                        .withConnectionTimeoutMs(5000)
                        .withExtraHeaders("Accept: application/vnd.github.v3+json");
