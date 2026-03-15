@@ -89,6 +89,11 @@ MainComponent::MainComponent()
         }
     });
 
+    // Update checker — weekly GitHub release check
+    updateChecker.checkIfDue(appProperties, [this](juce::String newVersion) {
+        showUpdateDialog(newVersion);
+    });
+
     setSize(720, 420);
 }
 
@@ -375,5 +380,29 @@ void MainComponent::resized()
 
     // Overlay: covers entire window
     dspOverlay.setBounds(0, 0, w, h);
+}
 
+//==============================================================================
+// Update checker
+//==============================================================================
+void MainComponent::showUpdateDialog(const juce::String& newVersion)
+{
+    auto& s = Strings::get();
+    auto currentVersion = juce::String(JUCE_APPLICATION_VERSION_STRING);
+    auto body = s.updateAvailableBody
+                    .replace("%s", newVersion, false);
+    // Replace second %s with current version
+    body = body.replace("%s", currentVersion, false);
+
+    auto options = juce::MessageBoxOptions()
+                       .withTitle(s.updateAvailableTitle)
+                       .withMessage(body)
+                       .withButton(s.updateDownload)
+                       .withButton(s.updateIgnore)
+                       .withIconType(juce::MessageBoxIconType::InfoIcon);
+
+    juce::AlertWindow::showAsync(options, [](int result) {
+        if (result == 1) // "Download" button
+            juce::URL("https://rec.bdg.fm").launchInDefaultBrowser();
+    });
 }

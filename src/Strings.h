@@ -23,6 +23,7 @@ struct StringTable
     juce::String recuperado, descartado;
     juce::String salvo;
     juce::String erroProcessamento, erroDesconhecido;
+    juce::String updateAvailableTitle, updateAvailableBody, updateDownload, updateIgnore;
 };
 
 namespace Strings
@@ -72,6 +73,11 @@ namespace Strings
         "Salvo: ",
         juce::CharPointer_UTF8 ("Erro no processamento: "),
         juce::CharPointer_UTF8 ("Erro desconhecido no processamento."),
+        // Update checker
+        juce::CharPointer_UTF8 ("Atualiza\xc3\xa7\xc3\xa3" "o dispon\xc3\xad" "vel"),
+        juce::CharPointer_UTF8 ("Nova vers\xc3\xa3" "o %s dispon\xc3\xad" "vel.\nVers\xc3\xa3" "o atual: %s."),
+        "Baixar",
+        "Ignorar",
     };
 
     // English table
@@ -104,6 +110,11 @@ namespace Strings
         "Saved: ",
         "Processing error: ",
         "Unknown processing error.",
+        // Update checker
+        "Update available",
+        "New version %s available.\nCurrent version: %s.",
+        "Download",
+        "Ignore",
     };
 
     // Current language (default: Portuguese)

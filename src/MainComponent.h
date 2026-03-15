@@ -9,6 +9,7 @@
 #include "AudioEngine.h"
 #include "DspOverlay.h"
 #include "InlineWarning.h"
+#include "UpdateChecker.h"
 
 class MainComponent : public juce::Component,
                       public AudioEngine::Listener
@@ -39,6 +40,7 @@ private:
     RecordingPanel recordingPanel{audioEngine};
     OutputPanel    outputPanel;
     DspOverlay     dspOverlay;
+    UpdateChecker  updateChecker;
 
     // Task 18 – Settings persistence
     juce::ApplicationProperties appProperties;
@@ -53,6 +55,8 @@ private:
     // Task 18 – persist / restore settings
     void saveSettings();
     void loadSettings();
+
+    void showUpdateDialog(const juce::String& newVersion);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
