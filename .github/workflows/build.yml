@@ -21,20 +21,24 @@ jobs:
       - name: Build
         run: cmake --build build --target BDG_REC --config Release
 
+      - name: Get version
+        id: version
+        run: echo "version=$(grep 'project(BDG_REC VERSION' CMakeLists.txt | sed 's/.*VERSION \([^ ]*\).*/\1/')" >> $GITHUB_OUTPUT
+
       - name: Create DMG
         run: |
           mkdir -p dist
           DMG_DIR=$(mktemp -d)
           cp -R "build/BDG_REC_artefacts/Release/BDG REC.app" "$DMG_DIR/"
           ln -s /Applications "$DMG_DIR/Applications"
-          hdiutil create -volname "BDG REC" -srcfolder "$DMG_DIR" -ov -format UDZO "dist/BDG_REC_macOS.dmg"
+          hdiutil create -volname "BDG REC" -srcfolder "$DMG_DIR" -ov -format UDZO "dist/BDG_REC_${{ steps.version.outputs.version }}_macOS.dmg"
           rm -rf "$DMG_DIR"
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
           name: BDG_REC_macOS
-          path: dist/BDG_REC_macOS.dmg
+          path: dist/BDG_REC_${{ steps.version.outputs.version }}_macOS.dmg
 
   build-windows:
     runs-on: windows-latest
@@ -49,17 +53,24 @@ jobs:
       - name: Build
         run: cmake --build build --target BDG_REC --config Release
 
+      - name: Get version
+        id: version
+        run: echo "version=$(Select-String -Path CMakeLists.txt -Pattern 'project\(BDG_REC VERSION (\S+)' | ForEach-Object { $_.Matches.Groups[1].Value })" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
       - name: Package
         run: |
           mkdir dist
-          copy "build\BDG_REC_artefacts\Release\BDG REC.exe" "dist\BDG_REC.exe"
+          copy "build\BDG_REC_artefacts\Release\BDG REC.exe" "dist\BDG_REC_%VERSION%_Windows.exe"
         shell: cmd
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
           name: BDG_REC_Windows
-          path: dist/BDG_REC.exe
+          path: dist/BDG_REC_${{ steps.version.outputs.version }}_Windows.exe
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -82,6 +93,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            BDG_REC_macOS.dmg
-            BDG_REC.exe
+            BDG_REC_*_macOS.dmg
+            BDG_REC_*_Windows.exe
           generate_release_notes: true
