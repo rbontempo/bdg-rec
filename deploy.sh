@@ -26,10 +26,10 @@ done
 # Upload API directory
 echo "  Uploading api/..."
 ssh -p "$PORT" -i ~/.ssh/id_ed25519 "$USER@$HOST" "mkdir -p $REMOTE_DIR/api"
-for f in api/config.php api/events.php api/stats.php api/auth.php api/change-password.php; do
+for f in api/config.php api/events.php api/stats.php api/auth.php api/change-password.php api/logout.php; do
   echo "    $f"
   scp -P "$PORT" -i ~/.ssh/id_ed25519 "$LOCAL_DIR/$f" "$USER@$HOST:$REMOTE_DIR/$f"
 done
 
 echo "Done! Site live at https://rec.bdg.fm"
-echo "REMINDER: Set production credentials in api/config.php on the server"
+echo "REMINDER: Ensure .env is configured on the server with production credentials"

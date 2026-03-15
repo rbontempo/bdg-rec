@@ -3,7 +3,11 @@
 
 require_once __DIR__ . '/config.php';
 
-session_start();
+session_start([
+    'cookie_httponly' => true,
+    'cookie_secure'   => true,
+    'cookie_samesite' => 'Strict',
+]);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(405, ['error' => 'Method not allowed']);
@@ -85,17 +89,35 @@ $cards = [
 
 // --- Activity chart (daily opens + recordings) ---
 $activity = ['labels' => [], 'opens' => [], 'recordings' => []];
+
+// Build date labels
+$dateMap = [];
 for ($i = $days - 1; $i >= 0; $i--) {
     $date = $now->modify("-{$i} days")->format('Y-m-d');
     $activity['labels'][] = $date;
+    $dateMap[$date] = ['opens' => 0, 'recordings' => 0];
+}
 
-    $stmt = $db->prepare("SELECT COUNT(*) FROM events WHERE event_type = 'app_open' AND DATE(created_at) = ?");
-    $stmt->execute([$date]);
-    $activity['opens'][] = (int) $stmt->fetchColumn();
+// Single grouped query
+$stmt = $db->prepare(
+    "SELECT DATE(created_at) as d, event_type, COUNT(*) as cnt
+     FROM events
+     WHERE event_type IN ('app_open', 'recording_end')
+     AND created_at >= ?
+     GROUP BY d, event_type"
+);
+$stmt->execute([$rangeStart]);
+foreach ($stmt->fetchAll() as $row) {
+    $d = $row['d'];
+    if (isset($dateMap[$d])) {
+        if ($row['event_type'] === 'app_open') $dateMap[$d]['opens'] = (int) $row['cnt'];
+        else $dateMap[$d]['recordings'] = (int) $row['cnt'];
+    }
+}
 
-    $stmt = $db->prepare("SELECT COUNT(*) FROM events WHERE event_type = 'recording_end' AND DATE(created_at) = ?");
-    $stmt->execute([$date]);
-    $activity['recordings'][] = (int) $stmt->fetchColumn();
+foreach ($dateMap as $counts) {
+    $activity['opens'][] = $counts['opens'];
+    $activity['recordings'][] = $counts['recordings'];
 }
 
 // --- OS distribution ---
@@ -124,14 +146,14 @@ $totalDsp = (int) $stmt->fetchColumn();
 
 $dspUsage = ['normalize' => 0, 'denoise' => 0, 'compress' => 0, 'deesser' => 0];
 if ($totalDsp > 0) {
+    $dspStmt = $db->prepare(
+        "SELECT COUNT(*) FROM events
+         WHERE event_type = 'dsp_applied' AND created_at >= ?
+         AND JSON_CONTAINS(JSON_EXTRACT(extra, '$.effects'), ?)"
+    );
     foreach (array_keys($dspUsage) as $effect) {
-        $stmt = $db->prepare(
-            "SELECT COUNT(*) FROM events
-             WHERE event_type = 'dsp_applied' AND created_at >= ?
-             AND JSON_CONTAINS(JSON_EXTRACT(extra, '$.effects'), ?)"
-        );
-        $stmt->execute([$rangeStart, json_encode($effect)]);
-        $count = (int) $stmt->fetchColumn();
+        $dspStmt->execute([$rangeStart, json_encode($effect)]);
+        $count = (int) $dspStmt->fetchColumn();
         $dspUsage[$effect] = (int) round($count / $totalDsp * 100);
     }
 }

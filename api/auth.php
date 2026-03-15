@@ -3,14 +3,18 @@
 
 require_once __DIR__ . '/config.php';
 
-session_start();
+session_start([
+    'cookie_httponly' => true,
+    'cookie_secure'   => true,
+    'cookie_samesite' => 'Strict',
+]);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(405, ['error' => 'Method not allowed']);
 }
 
 $body = json_decode(file_get_contents('php://input'), true);
-if (!$body) {
+if (!is_array($body)) {
     jsonResponse(400, ['error' => 'Invalid JSON']);
 }
 

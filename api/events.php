@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Validate API key
 $apiKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
-if ($apiKey !== getApiKey()) {
+if (!hash_equals(getApiKey(), $apiKey)) {
     jsonResponse(401, ['error' => 'Invalid API key']);
 }
 
@@ -43,12 +43,13 @@ if ($hits > 60) {
 
 // Parse body
 $body = json_decode(file_get_contents('php://input'), true);
-if (!$body) {
+if (!is_array($body)) {
     jsonResponse(400, ['error' => 'Invalid JSON']);
 }
 
 // Handle batch or single event
 $events = isset($body['batch']) ? $body['batch'] : [$body];
+$events = array_slice($events, 0, 100); // cap batch size
 
 $validTypes = ['app_open', 'recording_end', 'dsp_applied', 'export_complete', 'error'];
 $validEffects = ['normalize', 'denoise', 'compress', 'deesser'];
@@ -59,41 +60,51 @@ $insertStmt = $db->prepare(
 );
 
 $inserted = 0;
-foreach ($events as $evt) {
-    $type = $evt['event'] ?? '';
-    $machineId = $evt['machine_id'] ?? '';
+$db->beginTransaction();
+try {
+    foreach ($events as $evt) {
+        $type = $evt['event'] ?? '';
+        $machineId = $evt['machine_id'] ?? '';
 
-    if (!in_array($type, $validTypes, true)) continue;
-    if (strlen($machineId) === 0 || strlen($machineId) > 60) continue;
+        if (!in_array($type, $validTypes, true)) continue;
+        if (strlen($machineId) === 0 || strlen($machineId) > 60) continue;
 
-    $os = substr($evt['os'] ?? '', 0, 40);
-    $version = substr($evt['app_version'] ?? '', 0, 15);
-    $hardware = substr($evt['hardware'] ?? '', 0, 100);
-    $locale = substr($evt['locale'] ?? '', 0, 10);
+        $os = substr($evt['os'] ?? '', 0, 40);
+        $version = substr($evt['app_version'] ?? '', 0, 15);
+        $hardware = substr($evt['hardware'] ?? '', 0, 100);
+        $locale = substr($evt['locale'] ?? '', 0, 10);
 
-    $extra = $evt['extra'] ?? null;
-    if ($extra !== null) {
-        if (isset($extra['duration_seconds']) && ($extra['duration_seconds'] < 0 || $extra['duration_seconds'] > 86400)) {
-            $extra['duration_seconds'] = min(max((int)$extra['duration_seconds'], 0), 86400);
+        $extra = $evt['extra'] ?? null;
+        if ($extra !== null && strlen(json_encode($extra)) > 2048) {
+            $extra = null;
         }
-        if (isset($extra['file_size_mb']) && ($extra['file_size_mb'] < 0 || $extra['file_size_mb'] > 10000)) {
-            $extra['file_size_mb'] = min(max((float)$extra['file_size_mb'], 0), 10000);
+        if ($extra !== null) {
+            if (isset($extra['duration_seconds']) && ($extra['duration_seconds'] < 0 || $extra['duration_seconds'] > 86400)) {
+                $extra['duration_seconds'] = min(max((int)$extra['duration_seconds'], 0), 86400);
+            }
+            if (isset($extra['file_size_mb']) && ($extra['file_size_mb'] < 0 || $extra['file_size_mb'] > 10000)) {
+                $extra['file_size_mb'] = min(max((float)$extra['file_size_mb'], 0), 10000);
+            }
+            if (isset($extra['effects']) && is_array($extra['effects'])) {
+                $extra['effects'] = array_values(array_filter($extra['effects'], fn($e) => in_array($e, $validEffects, true)));
+            }
         }
-        if (isset($extra['effects']) && is_array($extra['effects'])) {
-            $extra['effects'] = array_values(array_filter($extra['effects'], fn($e) => in_array($e, $validEffects, true)));
-        }
+
+        $insertStmt->execute([
+            $type,
+            $machineId,
+            $os ?: null,
+            $version ?: null,
+            $hardware ?: null,
+            $locale ?: null,
+            $extra !== null ? json_encode($extra) : null,
+        ]);
+        $inserted++;
     }
-
-    $insertStmt->execute([
-        $type,
-        $machineId,
-        $os ?: null,
-        $version ?: null,
-        $hardware ?: null,
-        $locale ?: null,
-        $extra !== null ? json_encode($extra) : null,
-    ]);
-    $inserted++;
+    $db->commit();
+} catch (\Throwable $e) {
+    $db->rollBack();
+    jsonResponse(500, ['error' => 'Insert failed']);
 }
 
 if ($inserted === 0) {
