@@ -126,6 +126,7 @@ void AnalyticsReporter::sendBatch()
     }
 
     auto response = stream->readEntireStreamAsString();
+    // Silent: response checked below
     if (!response.contains("\"ok\""))
     {
         juce::ScopedLock lock(queueLock);
