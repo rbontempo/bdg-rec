@@ -11,6 +11,7 @@ LOCAL_DIR="$(cd "$(dirname "$0")" && pwd)"
 FILES=(
   "index.html"
   "admin.html"
+  "gravador-podcast.html"
   "BDG_ico.png"
   "logo-bdg-rec.png"
   "layout-bdg-rec.png"

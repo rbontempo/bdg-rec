@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gravador de áudio para podcast grátis — BDG rec</title>
+  <meta name="description" content="Grave seu podcast com áudio profissional. Normalização, redução de ruído e compressor integrados. Grátis para macOS e Windows. Sem cadastro.">
+  <link rel="canonical" href="https://rec.bdg.fm/gravador-podcast">
+  <link rel="icon" href="BDG_ico.png" type="image/png">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Gravador de áudio para podcast grátis — BDG rec">
+  <meta property="og:description" content="Grave seu podcast com áudio profissional. Normalização, redução de ruído e compressor integrados. Grátis para macOS e Windows. Sem cadastro.">
+  <meta property="og:image" content="https://rec.bdg.fm/layout-bdg-rec.png">
+  <meta property="og:url" content="https://rec.bdg.fm/gravador-podcast">
+  <meta property="og:type" content="website">
+
+  <!-- JSON-LD: SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "BDG rec",
+    "description": "Gravador de áudio para podcast com normalização, redução de ruído e compressor integrados.",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "macOS, Windows",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" },
+    "downloadUrl": "https://rec.bdg.fm/gravador-podcast",
+    "softwareVersion": "1.1.0"
+  }
+  </script>
+
+  <!-- JSON-LD: FAQPage -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Qual o melhor aplicativo para gravar áudio de podcast?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "O BDG rec é uma das melhores opções para quem quer gravar podcast sem complicação. Ele é gratuito, não exige cadastro e já inclui normalização, redução de ruído com rede neural, compressor multibanda e de-esser integrados. Você não precisa de DAW nem de plugins externos — o áudio sai pronto para publicar."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Como gravar áudio de podcast no Mac?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Baixe o arquivo DMG em rec.bdg.fm, arraste o BDG rec para a pasta Aplicativos e abra o app. Selecione seu microfone no seletor de dispositivo, aperte REC e comece a gravar. Ao parar, o áudio é processado automaticamente e salvo em WAV 24-bit na pasta que você escolher."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Preciso de um DAW para gravar podcast?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Não. Com o BDG rec você não precisa de Audacity, GarageBand, Adobe Audition nem de nenhum outro DAW. O app já tem normalização de volume, redução de ruído, compressor multibanda e de-esser integrados. Basta apertar um botão e o áudio sai tratado e pronto para edição ou publicação direta."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "O BDG rec funciona no Windows?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sim. O BDG rec tem versão para Windows 10 ou superior (x64). Basta baixar o arquivo EXE portátil — sem instalação. Execute direto e comece a gravar."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "O aplicativo é realmente grátis?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sim, o BDG rec é 100% gratuito e open source (licença GPLv3). Não tem anúncios, não pede cadastro e não tem plano pago ou assinatura. O código-fonte está disponível publicamente no GitHub."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Qual formato de áudio é melhor para podcast?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Para gravação, WAV 24-bit é o ideal: sem perdas, com total flexibilidade para edição. O BDG rec grava nesse formato por padrão. Para distribuição nas plataformas (Spotify, Apple Podcasts, etc.), converta para MP3 320kbps ou AAC 256kbps — qualquer DAW ou conversor gratuito faz isso em segundos."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bdg: {
+              primary: '#E5067D',
+              window: '#1a1a1c',
+              panel: '#232325',
+              input: '#2e2e30',
+              waveform: '#1e1e20',
+            }
+          },
+          fontFamily: {
+            display: ['"Space Mono"', 'monospace'],
+            body: ['"Instrument Sans"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Instrument Sans', sans-serif; background: #0e0e10; color: #f0f0f0; overflow-x: hidden; }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    /* Glow behind hero */
+    .hero-glow {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(229,6,125,0.15) 0%, transparent 70%);
+      top: -100px;
+      left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Rec button pulse */
+    @keyframes pulse-rec {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(229,6,125,0.5); }
+      50% { box-shadow: 0 0 0 16px rgba(229,6,125,0); }
+    }
+    .rec-pulse { animation: pulse-rec 2s ease-in-out infinite; }
+
+    /* Fade-in on scroll */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .fade-up.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Download buttons */
+    .dl-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .dl-btn:hover { transform: translateY(-2px); }
+    .dl-btn:active { transform: translateY(0); }
+    .dl-btn:focus-visible { outline: 2px solid #E5067D; outline-offset: 3px; }
+    .dl-btn-primary {
+      background: #E5067D;
+      color: #fff;
+      box-shadow: 0 4px 24px rgba(229,6,125,0.3), 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .dl-btn-primary:hover { box-shadow: 0 8px 32px rgba(229,6,125,0.4), 0 2px 6px rgba(0,0,0,0.3); }
+    .dl-btn-secondary {
+      background: rgba(255,255,255,0.06);
+      color: #f0f0f0;
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    }
+    .dl-btn-secondary:hover { background: rgba(255,255,255,0.1); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+
+    /* Feature cards */
+    .feature-card {
+      background: #19191b;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 32px;
+      transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(229,6,125,0.2);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(229,6,125,0.08);
+    }
+
+    /* Steps */
+    .step-num {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      font-size: 20px;
+      background: rgba(229,6,125,0.12);
+      color: #E5067D;
+      flex-shrink: 0;
+    }
+
+    /* Nav */
+    nav {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      background: rgba(14,14,16,0.8);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* Mockup window */
+    .app-mockup {
+      background: #1a1a1c;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    .app-titlebar {
+      height: 36px;
+      background: #161618;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 7px;
+    }
+    .app-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    /* FAQ */
+    details { background: #19191b; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; margin-bottom: 12px; }
+    details summary { padding: 20px 24px; cursor: pointer; font-weight: 600; font-size: 15px; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+    details[open] summary { border-bottom: 1px solid rgba(255,255,255,0.06); }
+    details .faq-answer { padding: 20px 24px; color: rgba(255,255,255,0.5); font-size: 14px; line-height: 1.7; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-3">
+        <img src="logo-bdg-rec.png" alt="BDG rec" class="h-8">
+      </a>
+      <div class="flex items-center gap-4">
+        <a href="#download" class="dl-btn dl-btn-primary text-sm !py-2 !px-5">Baixar grátis</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="relative min-h-screen flex flex-col items-center justify-center pt-24 pb-16 overflow-hidden">
+    <div class="hero-glow"></div>
+    <div class="max-w-5xl mx-auto px-6 text-center relative z-10">
+      <div class="fade-up">
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 mb-8">
+          <span class="w-2 h-2 rounded-full bg-bdg-primary rec-pulse"></span>
+          <span class="text-xs font-display tracking-wide text-white/50 uppercase">Aplicativo de gravação de áudio</span>
+        </div>
+        <h1 class="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[0.9] tracking-[-0.04em] mb-6">
+          Gravador de áudio<br><span class="text-bdg-primary">para podcast</span>
+        </h1>
+        <p class="text-lg md:text-xl text-white/50 max-w-2xl mx-auto leading-relaxed mb-10">
+          O aplicativo de gravação de áudio para podcast mais simples que existe. Um botão, áudio profissional, tratamento integrado. Grátis para macOS e Windows.
+        </p>
+        <div class="flex flex-wrap justify-center gap-3 mb-16">
+          <a href="https://github.com/rbontempo/bdg-rec/releases/latest/download/BDG_REC_macOS.dmg" class="dl-btn dl-btn-primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg>
+            Baixar para macOS
+          </a>
+          <a href="https://github.com/rbontempo/bdg-rec/releases/latest/download/BDG_REC.exe" class="dl-btn dl-btn-secondary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Baixar para Windows
+          </a>
+        </div>
+      </div>
+      <!-- App screenshot -->
+      <div class="fade-up" style="transition-delay: 0.2s;">
+        <div class="relative max-w-4xl mx-auto">
+          <div class="absolute -inset-4 bg-gradient-to-b from-bdg-primary/10 via-transparent to-transparent rounded-2xl blur-2xl pointer-events-none"></div>
+          <img src="layout-bdg-rec.png" alt="Interface do gravador de áudio BDG rec" class="w-full rounded-xl border border-white/10 shadow-[0_32px_80px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.04)]">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem / Solution -->
+  <section class="py-32 relative">
+    <div class="max-w-3xl mx-auto px-6 fade-up">
+      <h2 class="font-display text-3xl md:text-4xl font-bold tracking-[-0.03em] mb-6">Gravar áudio de podcast não precisa ser complicado</h2>
+      <p class="text-white/50 text-lg leading-relaxed mb-6">
+        A maioria das soluções para gravar podcast exige um DAW completo, uma cadeia de plugins de terceiros, horas de configuração de compressor, equalização e normalização — tudo antes de você apertar o primeiro REC. Quem é criador de conteúdo quer gravar, não virar engenheiro de áudio.
+      </p>
+      <p class="text-white/50 text-lg leading-relaxed mb-6">
+        O BDG rec foi criado exatamente para resolver isso: normalização, redução de ruído com rede neural, compressor multibanda de 3 faixas e de-esser já estão dentro do app. Nenhum plugin, nenhuma configuração manual, nenhuma curva de aprendizado.
+      </p>
+      <p class="text-white/70 text-lg font-semibold">
+        Com o BDG rec, você aperta um botão e o áudio sai pronto.
+      </p>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="py-32 relative">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="text-center mb-20 fade-up">
+        <h2 class="font-display text-3xl md:text-4xl font-bold tracking-[-0.03em] mb-4">Tudo que um gravador de podcast precisa ter</h2>
+      </div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div class="feature-card fade-up">
+          <div class="w-10 h-10 rounded-lg bg-bdg-primary/10 flex items-center justify-center mb-5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E5067D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </div>
+          <h3 class="font-display font-bold mb-2">Gravação de áudio profissional em WAV 24-bit</h3>
+          <p class="text-white/40 text-sm leading-relaxed">Gravação mono na taxa de amostragem nativa do seu dispositivo. Qualidade de estúdio sem configuração.</p>
+        </div>
+        <div class="feature-card fade-up" style="transition-delay: 0.07s;">
+          <div class="w-10 h-10 rounded-lg bg-bdg-primary/10 flex items-center justify-center mb-5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E5067D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <h3 class="font-display font-bold mb-2">Redução de ruído automática para podcast</h3>
+          <p class="text-white/40 text-sm leading-relaxed">Rede neural RNNoise remove ruído de fundo. Sem plugins, sem ajustes manuais.</p>
+        </div>
+        <div class="feature-card fade-up" style="transition-delay: 0.14s;">
+          <div class="w-10 h-10 rounded-lg bg-bdg-primary/10 flex items-center justify-center mb-5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E5067D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="22" height="12" rx="2"/><line x1="7" y1="6" x2="7" y2="18"/><line x1="13" y1="6" x2="13" y2="18"/></svg>
+          </div>
+          <h3 class="font-display font-bold mb-2">Compressor de áudio integrado para voz</h3>
+          <p class="text-white/40 text-sm leading-relaxed">Compressor multibanda de 3 faixas com ganho automático. Voz equilibrada e profissional.</p>
+        </div>
+        <div class="feature-card fade-up">
+          <div class="w-10 h-10 rounded-lg bg-bdg-primary/10 flex items-center justify-center mb-5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E5067D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3 class="font-display font-bold mb-2">Gravador de podcast à prova de falhas</h3>
+          <p class="text-white/40 text-sm leading-relaxed">Rotação de chunks a cada 5 minutos. Se o computador travar, sua gravação está segura.</p>
+        </div>
+        <div class="feature-card fade-up" style="transition-delay: 0.07s;">
+          <div class="w-10 h-10 rounded-lg bg-bdg-primary/10 flex items-center justify-center mb-5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E5067D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+          </div>
+          <h3 class="font-display font-bold mb-2">Normalização automática de áudio</h3>
+          <p class="text-white/40 text-sm leading-relaxed">RMS com limiter brick-wall. Volume consistente sem distorção em todo o episódio.</p>
+        </div>
+        <div class="feature-card fade-up" style="transition-delay: 0.14s;">
+          <div class="w-10 h-10 rounded-lg bg-bdg-primary/10 flex items-center justify-center mb-5">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E5067D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          </div>
+          <h3 class="font-display font-bold mb-2">De-esser para voz mais limpa</h3>
+          <p class="text-white/40 text-sm leading-relaxed">Redução de sibilância na faixa de 4-8 kHz. Sons de "s" estridentes eliminados automaticamente.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="py-32 relative">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="text-center mb-20 fade-up">
+        <h2 class="font-display text-3xl md:text-4xl font-bold tracking-[-0.03em] mb-4">Como usar o gravador de podcast</h2>
+        <p class="text-white/40 text-lg">Três passos. Sem manual.</p>
+      </div>
+      <div class="space-y-8">
+        <div class="flex items-start gap-6 fade-up">
+          <div class="step-num">1</div>
+          <div>
+            <h3 class="font-display font-bold text-xl mb-1">Selecione o microfone</h3>
+            <p class="text-white/40 leading-relaxed">Escolha seu dispositivo de áudio. O gravador de podcast salva sua preferência automaticamente.</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-6 fade-up">
+          <div class="step-num">2</div>
+          <div>
+            <h3 class="font-display font-bold text-xl mb-1">Aperte REC</h3>
+            <p class="text-white/40 leading-relaxed">Um botão grande no centro da tela. Seu áudio é capturado em WAV 24-bit com monitoramento em tempo real.</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-6 fade-up">
+          <div class="step-num">3</div>
+          <div>
+            <h3 class="font-display font-bold text-xl mb-1">Áudio profissional pronto</h3>
+            <p class="text-white/40 leading-relaxed">Ao parar, o app aplica normalização, redução de ruído e compressão automaticamente. Arquivo pronto para publicar.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="py-32 relative">
+    <div class="max-w-3xl mx-auto px-6">
+      <div class="text-center mb-16 fade-up">
+        <h2 class="font-display text-3xl md:text-4xl font-bold tracking-[-0.03em] mb-4">Perguntas frequentes</h2>
+      </div>
+      <div class="fade-up">
+        <details>
+          <summary>Qual o melhor aplicativo para gravar áudio de podcast?</summary>
+          <div class="faq-answer">O BDG rec é uma das melhores opções para quem quer gravar podcast sem complicação. Ele é gratuito, não exige cadastro e já inclui normalização, redução de ruído com rede neural, compressor multibanda e de-esser integrados. Você não precisa de DAW nem de plugins externos — o áudio sai pronto para publicar.</div>
+        </details>
+        <details>
+          <summary>Como gravar áudio de podcast no Mac?</summary>
+          <div class="faq-answer">Baixe o arquivo DMG em rec.bdg.fm, arraste o BDG rec para a pasta Aplicativos e abra o app. Selecione seu microfone no seletor de dispositivo, aperte REC e comece a gravar. Ao parar, o áudio é processado automaticamente e salvo em WAV 24-bit na pasta que você escolher.</div>
+        </details>
+        <details>
+          <summary>Preciso de um DAW para gravar podcast?</summary>
+          <div class="faq-answer">Não. Com o BDG rec você não precisa de Audacity, GarageBand, Adobe Audition nem de nenhum outro DAW. O app já tem normalização de volume, redução de ruído, compressor multibanda e de-esser integrados. Basta apertar um botão e o áudio sai tratado e pronto para edição ou publicação direta.</div>
+        </details>
+        <details>
+          <summary>O BDG rec funciona no Windows?</summary>
+          <div class="faq-answer">Sim. O BDG rec tem versão para Windows 10 ou superior (x64). Basta baixar o arquivo EXE portátil — sem instalação. Execute direto e comece a gravar.</div>
+        </details>
+        <details>
+          <summary>O aplicativo é realmente grátis?</summary>
+          <div class="faq-answer">Sim, o BDG rec é 100% gratuito e open source (licença GPLv3). Não tem anúncios, não pede cadastro e não tem plano pago ou assinatura. O código-fonte está disponível publicamente no GitHub.</div>
+        </details>
+        <details>
+          <summary>Qual formato de áudio é melhor para podcast?</summary>
+          <div class="faq-answer">Para gravação, WAV 24-bit é o ideal: sem perdas, com total flexibilidade para edição. O BDG rec grava nesse formato por padrão. Para distribuição nas plataformas (Spotify, Apple Podcasts, etc.), converta para MP3 320kbps ou AAC 256kbps — qualquer DAW ou conversor gratuito faz isso em segundos.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- Download CTA -->
+  <section class="py-32 relative" id="download">
+    <div class="max-w-3xl mx-auto px-6 text-center fade-up">
+      <div class="w-20 h-20 rounded-full bg-bdg-primary flex items-center justify-center mx-auto mb-8 rec-pulse">
+        <span class="font-display font-bold text-xl tracking-wider text-white">REC</span>
+      </div>
+      <h2 class="font-display text-4xl md:text-5xl font-bold tracking-[-0.03em] mb-4">Pronto para gravar?</h2>
+      <p class="text-white/40 text-lg mb-10 max-w-md mx-auto">Download gratuito. Sem cadastro. Sem assinatura.</p>
+      <div class="flex flex-wrap justify-center gap-3 mb-8">
+        <a href="https://github.com/rbontempo/bdg-rec/releases/latest/download/BDG_REC_macOS.dmg" class="dl-btn dl-btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg>
+          Baixar para macOS
+        </a>
+        <a href="https://github.com/rbontempo/bdg-rec/releases/latest/download/BDG_REC.exe" class="dl-btn dl-btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Baixar para Windows
+        </a>
+      </div>
+      <div class="flex justify-center gap-8 text-white/30 text-xs">
+        <span>macOS — Apple Silicon + Intel</span>
+        <span>·</span>
+        <span>Windows 10+ (x64)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/5 py-8">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <img src="logo-bdg-rec.png" alt="BDG rec" class="h-5 opacity-40">
+      </div>
+      <div class="flex flex-col items-center gap-2">
+        <p class="text-white/20 text-xs font-display">Gratuito e open source</p>
+        <a href="/gravador-podcast" class="text-white/20 hover:text-white/40 transition-colors text-xs">Gravador de podcast</a>
+      </div>
+      <a href="https://github.com/rbontempo/bdg-rec" class="text-white/20 hover:text-white/40 transition-colors" aria-label="GitHub">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      </a>
+    </div>
+  </footer>
+
+  <script>
+    // Scroll fade-in
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+  </script>
+
+</body>
+</html>
