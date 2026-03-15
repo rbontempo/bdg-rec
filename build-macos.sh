@@ -2,7 +2,7 @@
 set -e
 
 echo "============================================"
-echo " BDG REC - macOS Build Script"
+echo " BDG rec - macOS Build Script"
 echo "============================================"
 echo
 
@@ -26,11 +26,11 @@ echo "[3/4] Creating DMG..."
 mkdir -p dist
 
 DMG_DIR=$(mktemp -d)
-cp -R "build-release/BDG_REC_artefacts/Release/BDG REC.app" "$DMG_DIR/"
+cp -R "build-release/BDG_REC_artefacts/Release/BDG rec.app" "$DMG_DIR/"
 ln -s /Applications "$DMG_DIR/Applications"
 
 hdiutil create \
-    -volname "BDG REC" \
+    -volname "BDG rec" \
     -srcfolder "$DMG_DIR" \
     -ov \
     -format UDZO \

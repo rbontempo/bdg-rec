@@ -107,7 +107,7 @@ void DspOverlay::paint(juce::Graphics& g)
 
     float y = (bounds.getHeight() - totalH) * 0.5f;
 
-    // --- "BDG REC" title ---
+    // --- "BDG rec" title ---
     {
         juce::Font boldFont(juce::FontOptions().withHeight(16.0f).withStyle("Bold"));
         g.setFont(boldFont);

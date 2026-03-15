@@ -39,13 +39,13 @@ else()
 endif()
 
 juce_add_gui_app(BDG_REC
-    PRODUCT_NAME "BDG REC"
+    PRODUCT_NAME "BDG rec"
     COMPANY_NAME "BDG"
     BUNDLE_ID "com.bdg.rec"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/resources/BDG_ico.png"
-    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/BDG_ico.png"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/resources/icone-bdg.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/resources/icone-bdg.png"
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "BDG REC precisa acessar o microfone para gravar audio."
+    MICROPHONE_PERMISSION_TEXT "BDG rec precisa acessar o microfone para gravar audio."
 )
 
 juce_add_binary_data(BDG_REC_BinaryData SOURCES

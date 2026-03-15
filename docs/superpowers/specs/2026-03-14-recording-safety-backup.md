@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add crash-safe recording, disk space monitoring, and post-crash recovery to BDG REC. Designed for long recording sessions (up to 2 hours, ~1GB at mono 24-bit 48kHz).
+Add crash-safe recording, disk space monitoring, and post-crash recovery to BDG rec. Designed for long recording sessions (up to 2 hours, ~1GB at mono 24-bit 48kHz).
 
 ## 1. Chunk-based recording (crash-safe)
 

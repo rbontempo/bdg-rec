@@ -1,4 +1,4 @@
-# BDG REC
+# BDG rec
 
 Audio recorder for podcasts and long recording sessions.
 
@@ -42,7 +42,7 @@ Open "Developer Command Prompt for VS 2022" and run:
 ```bat
 build-windows.bat
 ```
-Output: `dist\BDG_REC_1.0.0_Windows\BDG REC.exe`
+Output: `dist\BDG_REC_1.0.0_Windows\BDG rec.exe`
 
 ## Tech Stack
 

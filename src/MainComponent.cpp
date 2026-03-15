@@ -63,7 +63,7 @@ MainComponent::MainComponent()
             auto folder = orphans.getFirst();
             auto options = juce::MessageBoxOptions()
                 .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                .withTitle("BDG REC")
+                .withTitle("BDG rec")
                 .withMessage(Strings::get().gravacaoAnterior)
                 .withButton(Strings::get().recuperar)
                 .withButton(Strings::get().descartar)
@@ -79,7 +79,7 @@ MainComponent::MainComponent()
                             Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
                     else
                         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                            "BDG REC", Strings::get().falhaRecuperacao);
+                            "BDG rec", Strings::get().falhaRecuperacao);
                 }
                 else if (result == 2) // Descartar
                 {
@@ -203,7 +203,7 @@ void MainComponent::devicesChanged()
         isRecording = false;
         recordingPanel.stopRecording();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", Strings::get().dispositivoDesconectado);
+            "BDG rec", Strings::get().dispositivoDesconectado);
     }
 }
 
@@ -230,7 +230,7 @@ void MainComponent::recordingAutoStopped()
         recordingPanel.stopRecording();
         recordingPanel.getInlineWarning().hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", Strings::get().gravacaoParadaDisco);
+            "BDG rec", Strings::get().gravacaoParadaDisco);
     });
 }
 
@@ -289,7 +289,7 @@ void MainComponent::handleRecordButtonClicked()
         {
             DBG("Recording FAILED to start");
             juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                "BDG REC", Strings::get().falhaIniciar);
+                "BDG rec", Strings::get().falhaIniciar);
         }
     }
     else
@@ -324,13 +324,13 @@ void MainComponent::handleRecordButtonClicked()
             {
                 dspOverlay.hide();
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                    "BDG REC", Strings::get().erroProcessamento + e.what());
+                    "BDG rec", Strings::get().erroProcessamento + e.what());
             }
             catch (...)
             {
                 dspOverlay.hide();
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                    "BDG REC", Strings::get().erroDesconhecido);
+                    "BDG rec", Strings::get().erroDesconhecido);
             }
         }
         else if (lastRecordedFile.existsAsFile())
@@ -407,7 +407,7 @@ void MainComponent::dspError(const juce::String& error)
     {
         dspOverlay.hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG REC", Strings::get().erroProcessamento + error);
+            "BDG rec", Strings::get().erroProcessamento + error);
 
         analyticsReporter.trackEvent("error", [&]() {
             auto extra = new juce::DynamicObject();

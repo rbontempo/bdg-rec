@@ -1,4 +1,4 @@
-# Update checker — BDG REC
+# Update checker — BDG rec
 
 ## Objetivo
 

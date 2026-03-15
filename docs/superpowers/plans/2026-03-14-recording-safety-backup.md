@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make BDG REC safe for 2-hour recording sessions by adding chunk-based recording, disk space monitoring, and crash recovery.
+**Goal:** Make BDG rec safe for 2-hour recording sessions by adding chunk-based recording, disk space monitoring, and crash recovery.
 
 **Architecture:** Replace single-file WAV recording with 5-minute chunk rotation. Each chunk is a valid WAV. On stop, chunks are concatenated. Disk space is monitored with auto-stop. On startup, orphaned chunks are detected and offered for recovery.
 
