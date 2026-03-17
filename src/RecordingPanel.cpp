@@ -20,8 +20,6 @@ RecordingPanel::RecordingPanel(AudioEngine& engine)
 
     addAndMakeVisible(waveformDisplay);
     addAndMakeVisible(recordButton);
-    addChildComponent(inlineWarning); // hidden by default
-
     recordButton.onClick = [this]()
     {
         if (onRecordClicked) onRecordClicked();
@@ -275,10 +273,6 @@ void RecordingPanel::resized()
 
     // Bottom disk space area
     area.removeFromBottom(diskH);
-
-    // Inline warning — 20px above disk bar
-    auto warningArea = area.removeFromBottom(20);
-    inlineWarning.setBounds(warningArea.reduced(padding, 0));
 
     // RecordButton area (below waveform)
     auto buttonArea = area.removeFromBottom(buttonAreaH);

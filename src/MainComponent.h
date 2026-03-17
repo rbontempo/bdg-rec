@@ -41,6 +41,7 @@ private:
     RecordingPanel recordingPanel{audioEngine};
     OutputPanel    outputPanel;
     DspOverlay     dspOverlay;
+    InlineWarning  inlineWarning;
     // Settings persistence (must be declared before analyticsReporter)
     juce::ApplicationProperties appProperties;
 

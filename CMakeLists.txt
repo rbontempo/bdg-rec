@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(BDG_REC VERSION 1.1.0 LANGUAGES C CXX)
+project(BDG_REC VERSION 1.1.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,7 @@ juce_add_gui_app(BDG_REC
 
 juce_add_binary_data(BDG_REC_BinaryData SOURCES
     resources/logo-bdg-rec.png
+    resources/icone-bdg.png
 )
 
 target_sources(BDG_REC PRIVATE

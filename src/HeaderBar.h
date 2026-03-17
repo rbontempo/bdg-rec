@@ -19,6 +19,7 @@ public:
 private:
     bool hitTest(int x, int y) override { return true; }
     juce::Rectangle<int> ptRect, enRect;
+    juce::Image iconImage;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HeaderBar)
 };

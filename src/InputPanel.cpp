@@ -46,6 +46,31 @@ InputPanel::InputPanel(AudioEngine& engine)
     };
     addAndMakeVisible(volumeSlider);
 
+    // BDG links — accordion toggle
+    toggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0x00000000));
+    toggleBtn.setColour(juce::TextButton::textColourOffId, BdgColours::textMuted);
+    toggleBtn.onClick = [this]() {
+        bdgLinksOpen = !bdgLinksOpen;
+        portalBtn.setVisible(bdgLinksOpen);
+        editBtn.setVisible(bdgLinksOpen);
+        resized();
+        repaint();
+    };
+    addAndMakeVisible(toggleBtn);
+
+    portalBtn.setColour(juce::TextButton::buttonColourId, BdgColours::primary);
+    portalBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    portalBtn.onClick = []() {
+        juce::URL("https://cliente.bichodegoiaba.com.br/cliente").launchInDefaultBrowser();
+    };
+    portalBtn.setVisible(false);
+    addAndMakeVisible(portalBtn);
+
+    editBtn.setFont(juce::FontOptions().withHeight(10.0f), false);
+    editBtn.setColour(juce::HyperlinkButton::textColourId, BdgColours::textMuted);
+    editBtn.setVisible(false);
+    addAndMakeVisible(editBtn);
+
 }
 
 InputPanel::~InputPanel()
@@ -177,6 +202,38 @@ void InputPanel::paint(juce::Graphics& g)
                juce::Rectangle<float>(pad, volLabelY, bounds.getWidth() - pad * 2.0f, 14.0f),
                juce::Justification::centredRight, false);
 
+    // ---- BDG toggle arrow ----
+    {
+        float arrowX = bounds.getRight() - padding - 10.0f;
+        float arrowY = (float)toggleBtn.getY() + 10.0f;
+        g.setColour(BdgColours::textMuted);
+        juce::Path arrow;
+        if (bdgLinksOpen)
+        {
+            arrow.startNewSubPath(arrowX - 4.0f, arrowY + 2.0f);
+            arrow.lineTo(arrowX, arrowY - 2.0f);
+            arrow.lineTo(arrowX + 4.0f, arrowY + 2.0f);
+        }
+        else
+        {
+            arrow.startNewSubPath(arrowX - 4.0f, arrowY - 2.0f);
+            arrow.lineTo(arrowX, arrowY + 2.0f);
+            arrow.lineTo(arrowX + 4.0f, arrowY - 2.0f);
+        }
+        g.strokePath(arrow, juce::PathStrokeType(1.5f));
+    }
+
+    // ---- BDG links box (when open) ----
+    if (bdgLinksOpen && portalBtn.isVisible())
+    {
+        float boxY = (float)portalBtn.getY() - 8.0f;
+        float boxH = (float)editBtn.getBottom() + 8.0f - boxY;
+        auto boxBounds = juce::Rectangle<float>(padding, boxY, bounds.getWidth() - padding * 2.0f, boxH);
+        g.setColour(BdgColours::bgInput);
+        g.fillRoundedRectangle(boxBounds, 6.0f);
+        g.setColour(BdgColours::border);
+        g.drawRoundedRectangle(boxBounds, 6.0f, 1.0f);
+    }
 }
 
 //==============================================================================
@@ -209,6 +266,16 @@ void InputPanel::resized()
 
     // Volume slider (24px)
     volumeSlider.setBounds(pad + 20, y, innerW - 20, 24);
-    y += 24 + 8;
+    y += 24 + 12;
 
+    // BDG accordion toggle
+    toggleBtn.setBounds(pad, y, innerW, 20);
+    y += 24;
+
+    // BDG links box (visible only when open)
+    if (bdgLinksOpen)
+    {
+        portalBtn.setBounds(pad + 8, y + 8, innerW - 16, 24);
+        editBtn.setBounds(pad + 8, y + 38, innerW - 16, 14);
+    }
 }

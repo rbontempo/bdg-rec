@@ -28,6 +28,7 @@ MainComponent::MainComponent()
 
     // Overlay on top
     addChildComponent(dspOverlay);
+    addChildComponent(inlineWarning);
 
     // Wire up record button
     recordingPanel.onRecordClicked = [this]() { handleRecordButtonClicked(); };
@@ -75,7 +76,7 @@ MainComponent::MainComponent()
                 {
                     auto recovered = audioEngine.recoverRecording(folder);
                     if (recovered.existsAsFile())
-                        recordingPanel.getInlineWarning().show(
+                        inlineWarning.show(
                             Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
                     else
                         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
@@ -216,7 +217,7 @@ void MainComponent::diskSpaceWarning(int remainingMinutes)
     {
         diskWarningShown = true;
         juce::MessageManager::callAsync([this, remainingMinutes]() {
-            recordingPanel.getInlineWarning().show(
+            inlineWarning.show(
                 Strings::get().discoBaixo + juce::String(remainingMinutes) + "min.",
                 InlineWarning::Warning, 0); // no auto-hide during recording
         });
@@ -228,7 +229,7 @@ void MainComponent::recordingAutoStopped()
     juce::MessageManager::callAsync([this]() {
         isRecording = false;
         recordingPanel.stopRecording();
-        recordingPanel.getInlineWarning().hide();
+        inlineWarning.hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
             "BDG rec", Strings::get().gravacaoParadaDisco);
     });
@@ -245,7 +246,7 @@ void MainComponent::handleRecordButtonClicked()
         // Task 19 – Validate device
         if (audioEngine.getCurrentInputDeviceName().isEmpty())
         {
-            recordingPanel.getInlineWarning().show(Strings::get().selecioneMic, InlineWarning::Warning);
+            inlineWarning.show(Strings::get().selecioneMic, InlineWarning::Warning);
             return;
         }
 
@@ -253,7 +254,7 @@ void MainComponent::handleRecordButtonClicked()
         juce::File folder = outputPanel.getDestFolder();
         if (!folder.exists() || !folder.isDirectory())
         {
-            recordingPanel.getInlineWarning().show(Strings::get().configurePasta, InlineWarning::Warning);
+            inlineWarning.show(Strings::get().configurePasta, InlineWarning::Warning);
             return;
         }
 
@@ -268,7 +269,7 @@ void MainComponent::handleRecordButtonClicked()
 
             if (remainingMin < 60)
             {
-                recordingPanel.getInlineWarning().show(
+                inlineWarning.show(
                     Strings::get().discoInsuficiente + " (~" + juce::String(remainingMin) + Strings::get().liberarEspaco,
                     InlineWarning::Error);
                 return;
@@ -336,8 +337,9 @@ void MainComponent::handleRecordButtonClicked()
         else if (lastRecordedFile.existsAsFile())
         {
             // No processing — report success inline
-            recordingPanel.getInlineWarning().show(
-                Strings::get().salvo + lastRecordedFile.getFileName(), InlineWarning::Info);
+            inlineWarning.show(
+                Strings::get().salvoNaPasta + lastRecordedFile.getParentDirectory().getFileName(), InlineWarning::Info);
+            lastRecordedFile.revealToUser();
 
             // Track export complete (no DSP)
             {
@@ -377,8 +379,9 @@ void MainComponent::dspFinished(const juce::File& file)
     juce::MessageManager::callAsync([this, file]()
     {
         dspOverlay.hide();
-        recordingPanel.getInlineWarning().show(
-            Strings::get().salvo + file.getFileName(), InlineWarning::Info);
+        inlineWarning.show(
+            Strings::get().salvoNaPasta + file.getParentDirectory().getFileName(), InlineWarning::Info);
+        file.revealToUser();
 
         // Track DSP applied
         {

@@ -68,7 +68,7 @@ void Dsp::normalize(juce::AudioBuffer<float>& buffer, double sampleRate)
 }
 
 //==============================================================================
-// Helper: single-band compressor with makeup gain on a float array
+// Helper: single-band compressor on a float array
 static void compressBand(float* data, int numSamples, double sampleRate,
                          double thresholdDb, double ratio,
                          double attackMs, double releaseMs)
@@ -76,12 +76,6 @@ static void compressBand(float* data, int numSamples, double sampleRate,
     const double thresholdLin = std::pow(10.0, thresholdDb / 20.0);
     const double attackCoeff  = std::exp(-1.0 / (attackMs  * 0.001 * sampleRate));
     const double releaseCoeff = std::exp(-1.0 / (releaseMs * 0.001 * sampleRate));
-
-    // Measure RMS before
-    double rmsBefore = 0.0;
-    for (int i = 0; i < numSamples; ++i)
-        rmsBefore += (double)data[i] * (double)data[i];
-    rmsBefore = std::sqrt(rmsBefore / numSamples);
 
     // Compress
     double envelope = 0.0;
@@ -103,18 +97,6 @@ static void compressBand(float* data, int numSamples, double sampleRate,
         data[i] = (float)(data[i] * gain);
     }
 
-    // Auto makeup gain
-    double rmsAfter = 0.0;
-    for (int i = 0; i < numSamples; ++i)
-        rmsAfter += (double)data[i] * (double)data[i];
-    rmsAfter = std::sqrt(rmsAfter / numSamples);
-
-    if (rmsAfter > 1e-10)
-    {
-        float makeup = juce::jmin((float)(rmsBefore / rmsAfter), 6.0f);
-        for (int i = 0; i < numSamples; ++i)
-            data[i] *= makeup;
-    }
 }
 
 // Simple 2nd-order Linkwitz-Riley crossover filter (12 dB/oct)

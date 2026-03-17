@@ -43,6 +43,11 @@ private:
     // Task 11 – Volume
     juce::Slider volumeSlider;
 
+    // BDG links (accordion)
+    juce::TextButton toggleBtn { juce::CharPointer_UTF8("Área restrita para clientes BDG") };
+    juce::TextButton portalBtn { "Portal do cliente" };
+    juce::HyperlinkButton editBtn { "Edite seu podcast com o Bicho de Goiaba", juce::URL("https://bichodegoiaba.com.br/") };
+    bool bdgLinksOpen = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InputPanel)
 };

@@ -21,7 +21,7 @@ struct StringTable
     juce::String gravacaoAnterior, falhaRecuperacao;
     juce::String recuperar, descartar, ignorar;
     juce::String recuperado, descartado;
-    juce::String salvo;
+    juce::String salvo, salvoNaPasta;
     juce::String erroProcessamento, erroDesconhecido;
     juce::String updateAvailableTitle, updateAvailableBody, updateDownload, updateIgnore;
 };
@@ -71,6 +71,7 @@ namespace Strings
         "Recuperar", "Descartar", "Ignorar",
         "Recuperado: ", "Descartado.",
         "Salvo: ",
+        juce::CharPointer_UTF8 ("A grava\xc3\xa7\xc3\xa3" "o foi salva com sucesso na pasta "),
         juce::CharPointer_UTF8 ("Erro no processamento: "),
         juce::CharPointer_UTF8 ("Erro desconhecido no processamento."),
         // Update checker
@@ -108,6 +109,7 @@ namespace Strings
         "Recover", "Discard", "Ignore",
         "Recovered: ", "Discarded.",
         "Saved: ",
+        "Recording saved successfully to folder ",
         "Processing error: ",
         "Unknown processing error.",
         // Update checker

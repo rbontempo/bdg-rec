@@ -4,7 +4,6 @@
 #include "AudioEngine.h"
 #include "WaveformDisplay.h"
 #include "RecordButton.h"
-#include "InlineWarning.h"
 
 class RecordingPanel : public juce::Component,
                        public AudioEngine::Listener,
@@ -53,14 +52,11 @@ private:
     int         diskWarningLevel{0}; // 0=normal, 1=warning, 2=critical
     juce::Label diskSpaceLabel;
 
-    InlineWarning inlineWarning;
-
     void updateTimerLabel();
     void updateDiskSpace();
     void paintDiskSpaceBar(juce::Graphics& g, juce::Rectangle<int> area);
 
 public:
-    InlineWarning& getInlineWarning() { return inlineWarning; }
     int getElapsedSeconds() const { return elapsedSecs; }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RecordingPanel)
