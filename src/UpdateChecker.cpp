@@ -26,6 +26,13 @@ void UpdateChecker::checkIfDue(juce::ApplicationProperties& props,
     startThread(juce::Thread::Priority::low);
 }
 
+void UpdateChecker::forceCheck()
+{
+    if (isThreadRunning())
+        return; // already checking
+    startThread(juce::Thread::Priority::low);
+}
+
 void UpdateChecker::run()
 {
     auto url = juce::URL("https://api.github.com/repos/rbontempo/bdg-rec/releases/latest");

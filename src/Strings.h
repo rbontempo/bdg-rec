@@ -24,6 +24,11 @@ struct StringTable
     juce::String salvo, salvoNaPasta;
     juce::String erroProcessamento, erroDesconhecido;
     juce::String updateAvailableTitle, updateAvailableBody, updateDownload, updateIgnore;
+    // Menu bar
+    juce::String menuBdgRec, menuHelp;
+    juce::String menuAbout, menuCheckUpdates, menuLanguage, menuQuit;
+    juce::String menuWebsite, menuPortal;
+    juce::String aboutBody;
 };
 
 namespace Strings
@@ -79,6 +84,16 @@ namespace Strings
         juce::CharPointer_UTF8 ("Nova vers\xc3\xa3" "o %s dispon\xc3\xad" "vel.\nVers\xc3\xa3" "o atual: %s."),
         "Baixar",
         "Ignorar",
+        // Menu bar
+        "BDG rec",
+        "Ajuda",
+        "Sobre o BDG rec",
+        juce::CharPointer_UTF8 ("Buscar atualiza\xc3\xa7\xc3\xb5" "es..."),
+        "Idioma",
+        "Sair",
+        "Website BDG",
+        "Portal do cliente",
+        juce::CharPointer_UTF8 ("Gravador de \xc3\xa1" "udio profissional\npara podcasts e longas grava\xc3\xa7\xc3\xb5" "es.\n\nBicho de Goiaba\nwww.bichodegoiaba.com.br"),
     };
 
     // English table
@@ -117,6 +132,16 @@ namespace Strings
         "New version %s available.\nCurrent version: %s.",
         "Download",
         "Ignore",
+        // Menu bar
+        "BDG rec",
+        "Help",
+        "About BDG rec",
+        "Check for updates...",
+        "Language",
+        "Quit",
+        "BDG Website",
+        "Client portal",
+        "Professional audio recorder\nfor podcasts and long recordings.\n\nBicho de Goiaba\nwww.bichodegoiaba.com.br",
     };
 
     // Current language (default: Portuguese)

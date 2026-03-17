@@ -1,9 +1,31 @@
 #include "MainComponent.h"
 #include "Strings.h"
+#include "BinaryData.h"
 
 MainComponent::MainComponent()
 {
     setLookAndFeel(&bdgLookAndFeel);
+
+    // Native menu bar
+#if JUCE_MAC
+    {
+        juce::PopupMenu appleMenu;
+        appleMenu.addItem(idAbout, Strings::get().menuAbout);
+        appleMenu.addItem(idCheckUpdates, Strings::get().menuCheckUpdates);
+        appleMenu.addSeparator();
+
+        juce::PopupMenu langMenu;
+        bool isPt = (Strings::getLanguage() == Language::PT);
+        langMenu.addItem(idLangPT, "PT", true, isPt);
+        langMenu.addItem(idLangEN, "EN", true, !isPt);
+        appleMenu.addSubMenu(Strings::get().menuLanguage, langMenu);
+
+        juce::MenuBarModel::setMacMainMenu(this, &appleMenu);
+    }
+#elif JUCE_WINDOWS
+    menuBarComponent = std::make_unique<juce::MenuBarComponent>(this);
+    addAndMakeVisible(menuBarComponent.get());
+#endif
 
     // Task 18 – init ApplicationProperties
     {
@@ -39,6 +61,7 @@ MainComponent::MainComponent()
         inputPanel.repaint();
         recordingPanel.repaint();
         outputPanel.updateLanguage();
+        menuItemsChanged();
         saveSettings();
     };
 
@@ -115,6 +138,9 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+#if JUCE_MAC
+    juce::MenuBarModel::setMacMainMenu(nullptr);
+#endif
     audioEngine.removeListener(this);
     setLookAndFeel(nullptr);
 
@@ -452,10 +478,16 @@ void MainComponent::resized()
     const int gap          = 12;
 
     // Header: full width
+#if JUCE_WINDOWS
+    const int menuBarHeight = 24;
+    if (menuBarComponent)
+        menuBarComponent->setBounds(0, 0, w, menuBarHeight);
+    headerBar.setBounds(0, menuBarHeight, w, headerHeight);
+    const int contentY = menuBarHeight + headerHeight + padding;
+#else
     headerBar.setBounds(0, 0, w, headerHeight);
-
-    // Three columns below header
     const int contentY = headerHeight + padding;
+#endif
     const int contentH = h - contentY - padding;
     const int totalGap = gap * 2;
     const int colW     = (w - padding * 2 - totalGap) / 3;
@@ -477,18 +509,209 @@ void MainComponent::showUpdateDialog(const juce::String& newVersion)
     auto currentVersion = juce::String(JUCE_APPLICATION_VERSION_STRING);
     auto body = s.updateAvailableBody
                     .replace("%s", newVersion, false);
-    // Replace second %s with current version
     body = body.replace("%s", currentVersion, false);
 
-    auto options = juce::MessageBoxOptions()
-                       .withTitle(s.updateAvailableTitle)
-                       .withMessage(body)
-                       .withButton(s.updateDownload)
-                       .withButton(s.updateIgnore)
-                       .withIconType(juce::MessageBoxIconType::InfoIcon);
+    auto* window = new juce::DialogWindow::LaunchOptions();
+    auto* content = new juce::Component();
+    content->setSize(320, 280);
 
-    juce::AlertWindow::showAsync(options, [](int result) {
-        if (result == 1) // "Download" button
-            juce::URL("https://rec.bdg.fm").launchInDefaultBrowser();
-    });
+    // Logo
+    auto logo = juce::ImageCache::getFromMemory(
+        BinaryData::logobdgrec_png, BinaryData::logobdgrec_pngSize);
+    auto* logoComp = new juce::ImageComponent();
+    logoComp->setImage(logo, juce::RectanglePlacement::centred);
+    logoComp->setBounds(60, 20, 200, 80);
+    content->addAndMakeVisible(logoComp);
+
+    // Message
+    auto* msgLabel = new juce::Label("msg", body);
+    msgLabel->setFont(juce::FontOptions().withHeight(14.0f));
+    msgLabel->setColour(juce::Label::textColourId, BdgColours::textPrimary);
+    msgLabel->setJustificationType(juce::Justification::centred);
+    msgLabel->setBounds(20, 115, 280, 60);
+    content->addAndMakeVisible(msgLabel);
+
+    // Download button
+    auto* downloadBtn = new juce::TextButton(s.updateDownload);
+    downloadBtn->setColour(juce::TextButton::buttonColourId, BdgColours::primary);
+    downloadBtn->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    downloadBtn->setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    downloadBtn->setBounds(40, 195, 110, 30);
+    downloadBtn->onClick = [downloadBtn]() {
+        juce::URL("https://rec.bdg.fm").launchInDefaultBrowser();
+        if (auto* dw = downloadBtn->findParentComponentOfClass<juce::DialogWindow>())
+            dw->closeButtonPressed();
+    };
+    content->addAndMakeVisible(downloadBtn);
+
+    // Ignore button
+    auto* ignoreBtn = new juce::TextButton(s.updateIgnore);
+    ignoreBtn->setColour(juce::TextButton::buttonColourId, BdgColours::bgInput);
+    ignoreBtn->setColour(juce::TextButton::textColourOffId, BdgColours::textPrimary);
+    ignoreBtn->setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    ignoreBtn->setBounds(170, 195, 110, 30);
+    ignoreBtn->onClick = [ignoreBtn]() {
+        if (auto* dw = ignoreBtn->findParentComponentOfClass<juce::DialogWindow>())
+            dw->closeButtonPressed();
+    };
+    content->addAndMakeVisible(ignoreBtn);
+
+    window->content.setOwned(content);
+    window->dialogTitle = s.updateAvailableTitle;
+    window->dialogBackgroundColour = BdgColours::bgPanel;
+    window->escapeKeyTriggersCloseButton = true;
+    window->useNativeTitleBar = true;
+    window->resizable = false;
+
+    window->launchAsync();
+}
+
+//==============================================================================
+// MenuBarModel
+//==============================================================================
+juce::StringArray MainComponent::getMenuBarNames()
+{
+    auto& s = Strings::get();
+#if JUCE_MAC
+    return { s.menuHelp };
+#else
+    return { s.menuBdgRec, s.menuHelp };
+#endif
+}
+
+juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const juce::String&)
+{
+    auto& s = Strings::get();
+    juce::PopupMenu menu;
+
+#if JUCE_MAC
+    // On macOS, index 0 = Help (BDG rec items are in the Apple menu)
+    if (topLevelMenuIndex == 0)
+    {
+        menu.addItem(idWebsite, s.menuWebsite);
+        menu.addItem(idPortal, s.menuPortal);
+    }
+#else
+    if (topLevelMenuIndex == 0) // BDG rec
+    {
+        menu.addItem(idAbout, s.menuAbout);
+        menu.addItem(idCheckUpdates, s.menuCheckUpdates);
+        menu.addSeparator();
+
+        juce::PopupMenu langMenu;
+        bool isPt = (Strings::getLanguage() == Language::PT);
+        langMenu.addItem(idLangPT, "PT", true, isPt);
+        langMenu.addItem(idLangEN, "EN", true, !isPt);
+        menu.addSubMenu(s.menuLanguage, langMenu);
+
+        menu.addSeparator();
+        menu.addItem(idQuit, s.menuQuit);
+    }
+    else if (topLevelMenuIndex == 1) // Help
+    {
+        menu.addItem(idWebsite, s.menuWebsite);
+        menu.addItem(idPortal, s.menuPortal);
+    }
+#endif
+
+    return menu;
+}
+
+void MainComponent::menuItemSelected(int menuItemID, int)
+{
+    switch (menuItemID)
+    {
+        case idAbout:
+            showAboutDialog();
+            break;
+        case idCheckUpdates:
+            updateChecker.forceCheck();
+            break;
+        case idLangPT:
+            Strings::setLanguage(Language::PT);
+            menuItemsChanged();
+            headerBar.repaint();
+            inputPanel.repaint();
+            recordingPanel.repaint();
+            outputPanel.updateLanguage();
+            saveSettings();
+            break;
+        case idLangEN:
+            Strings::setLanguage(Language::EN);
+            menuItemsChanged();
+            headerBar.repaint();
+            inputPanel.repaint();
+            recordingPanel.repaint();
+            outputPanel.updateLanguage();
+            saveSettings();
+            break;
+        case idQuit:
+            juce::JUCEApplication::getInstance()->systemRequestedQuit();
+            break;
+        case idWebsite:
+            juce::URL("https://www.bichodegoiaba.com.br").launchInDefaultBrowser();
+            break;
+        case idPortal:
+            juce::URL("https://cliente.bichodegoiaba.com.br/").launchInDefaultBrowser();
+            break;
+        default:
+            break;
+    }
+}
+
+void MainComponent::showAboutDialog()
+{
+    auto& s = Strings::get();
+    auto version = juce::String("v") + JUCE_APPLICATION_VERSION_STRING;
+
+    auto* window = new juce::DialogWindow::LaunchOptions();
+
+    auto* content = new juce::Component();
+    content->setSize(320, 280);
+
+    // Logo
+    auto logo = juce::ImageCache::getFromMemory(
+        BinaryData::logobdgrec_png, BinaryData::logobdgrec_pngSize);
+
+    auto* logoComp = new juce::ImageComponent();
+    logoComp->setImage(logo, juce::RectanglePlacement::centred);
+    logoComp->setBounds(60, 20, 200, 80);
+    content->addAndMakeVisible(logoComp);
+
+    // Version
+    auto* versionLabel = new juce::Label("version", version);
+    versionLabel->setFont(juce::FontOptions().withHeight(13.0f));
+    versionLabel->setColour(juce::Label::textColourId, BdgColours::textMuted);
+    versionLabel->setJustificationType(juce::Justification::centred);
+    versionLabel->setBounds(0, 108, 320, 20);
+    content->addAndMakeVisible(versionLabel);
+
+    // Description
+    auto* descLabel = new juce::Label("desc", s.aboutBody);
+    descLabel->setFont(juce::FontOptions().withHeight(13.0f));
+    descLabel->setColour(juce::Label::textColourId, BdgColours::textPrimary);
+    descLabel->setJustificationType(juce::Justification::centred);
+    descLabel->setBounds(20, 135, 280, 80);
+    content->addAndMakeVisible(descLabel);
+
+    // OK button
+    auto* okBtn = new juce::TextButton("OK");
+    okBtn->setColour(juce::TextButton::buttonColourId, BdgColours::primary);
+    okBtn->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    okBtn->setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    okBtn->setBounds(110, 230, 100, 30);
+    okBtn->onClick = [okBtn]() {
+        if (auto* dw = okBtn->findParentComponentOfClass<juce::DialogWindow>())
+            dw->closeButtonPressed();
+    };
+    content->addAndMakeVisible(okBtn);
+
+    window->content.setOwned(content);
+    window->dialogTitle = s.menuAbout;
+    window->dialogBackgroundColour = BdgColours::bgPanel;
+    window->escapeKeyTriggersCloseButton = true;
+    window->useNativeTitleBar = true;
+    window->resizable = false;
+
+    window->launchAsync();
 }

@@ -15,6 +15,9 @@ public:
     void checkIfDue(juce::ApplicationProperties& props,
                     std::function<void(juce::String newVersion)> onUpdateAvailable);
 
+    /// Manual check triggered from menu — bypasses 7-day interval.
+    void forceCheck();
+
 private:
     void run() override;
 

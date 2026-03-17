@@ -13,6 +13,7 @@
 #include "AnalyticsReporter.h"
 
 class MainComponent : public juce::Component,
+                      public juce::MenuBarModel,
                       public AudioEngine::Listener
 {
 public:
@@ -61,6 +62,28 @@ private:
     void loadSettings();
 
     void showUpdateDialog(const juce::String& newVersion);
+
+    // MenuBarModel
+    juce::StringArray getMenuBarNames() override;
+    juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) override;
+    void menuItemSelected(int menuItemID, int topLevelMenuIndex) override;
+
+    void showAboutDialog();
+
+#if JUCE_WINDOWS
+    std::unique_ptr<juce::MenuBarComponent> menuBarComponent;
+#endif
+
+    enum MenuIDs
+    {
+        idAbout = 1,
+        idCheckUpdates,
+        idLangPT,
+        idLangEN,
+        idQuit,
+        idWebsite,
+        idPortal
+    };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
