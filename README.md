@@ -13,7 +13,7 @@ Built with [JUCE](https://juce.com/) framework in C++.
 - **DSP treatments** (post-recording):
   - Normalize (RMS + brick-wall limiter)
   - Noise Reduction (RNNoise neural network)
-  - Multiband Compressor (3 bands + auto makeup gain)
+  - Multiband Compressor (3 bands)
   - De-Esser (4-8 kHz sibilance reduction)
 - **Bilingual** — Portuguese (pt-BR) and English
 - **Settings persistence** — device, folder, volume, treatments saved between sessions
@@ -53,4 +53,4 @@ Output: `dist\BDG_REC_1.0.0_Windows\BDG rec.exe`
 
 ## Screenshots
 
-*Coming soon*
+<img width="700" height="442" alt="BDG rec" src="https://github.com/user-attachments/assets/38afda96-a6a8-4d7b-a2fe-d9a94889a87f" />
