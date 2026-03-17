@@ -197,6 +197,7 @@
         <img src="logo-bdg-rec.png" alt="BDG rec" class="h-8">
       </a>
       <div class="flex items-center gap-4">
+        <button onclick="openSupport()" class="text-white/40 hover:text-white/70 text-sm font-medium transition-colors cursor-pointer" data-pt="Suporte" data-en="Support">Suporte</button>
         <div class="flex gap-1 bg-white/5 rounded-lg p-1">
           <button class="lang-btn active" onclick="setLang('pt')" id="btn-pt">PT</button>
           <button class="lang-btn" onclick="setLang('en')" id="btn-en">EN</button>
@@ -382,7 +383,20 @@
     </div>
   </footer>
 
+  <!-- HubSpot widget -->
+  <script type="text/javascript" id="hs-script-loader" async defer src="//js.hs-scripts.com/6977156.js"></script>
+
   <script>
+    // Support — open HubSpot chat/helpdesk widget
+    function openSupport() {
+      if (window.HubSpotConversations && window.HubSpotConversations.widget) {
+        window.HubSpotConversations.widget.open();
+      } else {
+        // Fallback: open HubSpot customer portal
+        window.open('https://help.bichodegoiaba.com.br', '_blank');
+      }
+    }
+
     // Scroll fade-in
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
