@@ -508,8 +508,8 @@ void MainComponent::showUpdateDialog(const juce::String& newVersion)
     auto& s = Strings::get();
     auto currentVersion = juce::String(JUCE_APPLICATION_VERSION_STRING);
     auto body = s.updateAvailableBody
-                    .replace("%s", newVersion, false);
-    body = body.replace("%s", currentVersion, false);
+                    .replace("%NEW%", newVersion, false)
+                    .replace("%CUR%", currentVersion, false);
 
     auto* window = new juce::DialogWindow::LaunchOptions();
     auto* content = new juce::Component();

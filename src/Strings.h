@@ -81,7 +81,7 @@ namespace Strings
         juce::CharPointer_UTF8 ("Erro desconhecido no processamento."),
         // Update checker
         juce::CharPointer_UTF8 ("Atualiza\xc3\xa7\xc3\xa3" "o dispon\xc3\xad" "vel"),
-        juce::CharPointer_UTF8 ("Nova vers\xc3\xa3" "o %s dispon\xc3\xad" "vel.\nVers\xc3\xa3" "o atual: %s."),
+        juce::CharPointer_UTF8 ("Nova vers\xc3\xa3" "o %NEW% dispon\xc3\xad" "vel.\nVers\xc3\xa3" "o atual: %CUR%."),
         "Baixar",
         "Ignorar",
         // Menu bar
@@ -129,7 +129,7 @@ namespace Strings
         "Unknown processing error.",
         // Update checker
         "Update available",
-        "New version %s available.\nCurrent version: %s.",
+        "New version %NEW% available.\nCurrent version: %CUR%.",
         "Download",
         "Ignore",
         // Menu bar
