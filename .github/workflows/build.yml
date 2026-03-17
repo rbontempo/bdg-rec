@@ -104,9 +104,9 @@ jobs:
             --window-pos 200 120 \
             --window-size 600 323 \
             --icon-size 80 \
-            --icon "BDG rec.app" 430 130 \
-            --app-drop-link 170 130 \
-            --add-file "LEIA-ME.txt" "resources/LEIA-ME.txt" 300 290 \
+            --icon "BDG rec.app" 430 135 \
+            --app-drop-link 170 135 \
+            --add-file "LEIA-ME.txt" "resources/LEIA-ME.txt" 500 135 \
             --text-size 13 \
             --no-internet-enable \
             "dist/BDG_REC_macOS.dmg" \
