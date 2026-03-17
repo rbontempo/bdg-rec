@@ -72,7 +72,7 @@ void HeaderBar::paint(juce::Graphics& g)
     juce::Font mutedFont(juce::FontOptions().withHeight(12.0f));
     g.setFont(mutedFont);
     g.setColour(BdgColours::textMuted);
-    g.drawText("v1.0",
+    g.drawText(juce::String("v") + JUCE_APPLICATION_VERSION_STRING,
                juce::Rectangle<float>(0.0f, 0.0f, (float)w - 14.0f, (float)h),
                juce::Justification::centredRight, false);
 
@@ -94,6 +94,15 @@ void HeaderBar::resized()
 
     ptRect = { ptX, y, btnW, btnH };
     enRect = { enX, y, btnW, btnH };
+}
+
+void HeaderBar::mouseMove(const juce::MouseEvent& e)
+{
+    auto pos = e.getPosition();
+    if (ptRect.contains(pos) || enRect.contains(pos))
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    else
+        setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void HeaderBar::mouseDown(const juce::MouseEvent& e)

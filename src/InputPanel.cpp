@@ -47,6 +47,7 @@ InputPanel::InputPanel(AudioEngine& engine)
     addAndMakeVisible(volumeSlider);
 
     // BDG links — accordion toggle
+    toggleBtn.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     toggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0x00000000));
     toggleBtn.setColour(juce::TextButton::textColourOffId, BdgColours::textMuted);
     toggleBtn.onClick = [this]() {
@@ -58,10 +59,11 @@ InputPanel::InputPanel(AudioEngine& engine)
     };
     addAndMakeVisible(toggleBtn);
 
+    portalBtn.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     portalBtn.setColour(juce::TextButton::buttonColourId, BdgColours::primary);
     portalBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     portalBtn.onClick = []() {
-        juce::URL("https://cliente.bichodegoiaba.com.br/cliente").launchInDefaultBrowser();
+        juce::URL("https://cliente.bichodegoiaba.com.br/").launchInDefaultBrowser();
     };
     portalBtn.setVisible(false);
     addAndMakeVisible(portalBtn);

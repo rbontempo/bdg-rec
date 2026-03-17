@@ -20,4 +20,22 @@ assinatura da Apple (Apple Developer Program, $99/ano).
 O macOS bloqueia apps nao assinados por seguranca, mas voce
 pode autorizar manualmente como descrito acima.
 
+
+Versao 1.1.1 — Novidades
+=========================
+
+- Notificacoes com card centralizado e colorido (verde/amarelo/vermelho)
+- Finder abre automaticamente na pasta do arquivo apos gravar
+- Compressor multiband melhorado (auto makeup gain desativado)
+- Links de clientes BDG no painel de entrada
+- Header atualizado com icone e "rec" em minuscula
+- Fechar notificacao clicando em qualquer lugar do card
+
+
+Sobre
+=====
+
+BDG rec e um software desenvolvido pelo Bicho de Goiaba.
+www.bichodegoiaba.com.br
+
 Codigo fonte: https://github.com/rbontempo/bdg-rec

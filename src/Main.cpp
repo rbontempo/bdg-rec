@@ -5,7 +5,7 @@ class BdgRecApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override    { return "BDG rec"; }
-    const juce::String getApplicationVersion() override { return "1.0.0"; }
+    const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
 
     void initialise(const juce::String&) override
     {

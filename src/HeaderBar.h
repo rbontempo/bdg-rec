@@ -10,6 +10,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
 
     // Called when language changes — parent should repaint all panels
     std::function<void()> onLanguageChanged;

@@ -57,7 +57,10 @@ private:
         bool value = false;
         std::function<void(bool)> onToggle;
 
-        explicit ToggleRow(const juce::String& text) : labelText(text) {}
+        explicit ToggleRow(const juce::String& text) : labelText(text)
+        {
+            setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        }
 
         void paint(juce::Graphics& g) override;
         void mouseUp(const juce::MouseEvent& e) override;

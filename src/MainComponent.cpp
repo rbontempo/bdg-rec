@@ -56,39 +56,49 @@ MainComponent::MainComponent()
     // Sync disk space display with current folder
     recordingPanel.setDestFolder(outputPanel.getDestFolder());
 
-    // Check for orphaned recordings from a previous crash
-    juce::MessageManager::callAsync([this]() {
-        auto orphans = audioEngine.findOrphanedRecordings(outputPanel.getDestFolder());
-        if (!orphans.isEmpty())
+    // Check for orphaned recordings from a previous crash.
+    // Only scan if the user has previously configured a custom folder
+    // (i.e. settings file exists with a destFolder entry). This avoids
+    // triggering the macOS folder-access permission dialog for ~/Downloads
+    // on the very first launch.
+    if (auto* props = appProperties.getUserSettings())
+    {
+        if (props->getValue("destFolder", "").isNotEmpty())
         {
-            auto folder = orphans.getFirst();
-            auto options = juce::MessageBoxOptions()
-                .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                .withTitle("BDG rec")
-                .withMessage(Strings::get().gravacaoAnterior)
-                .withButton(Strings::get().recuperar)
-                .withButton(Strings::get().descartar)
-                .withButton(Strings::get().ignorar);
+            juce::MessageManager::callAsync([this]() {
+                auto orphans = audioEngine.findOrphanedRecordings(outputPanel.getDestFolder());
+                if (!orphans.isEmpty())
+                {
+                    auto folder = orphans.getFirst();
+                    auto options = juce::MessageBoxOptions()
+                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                        .withTitle("BDG rec")
+                        .withMessage(Strings::get().gravacaoAnterior)
+                        .withButton(Strings::get().recuperar)
+                        .withButton(Strings::get().descartar)
+                        .withButton(Strings::get().ignorar);
 
-            juce::AlertWindow::showAsync(options, [this, folder](int result)
-            {
-                if (result == 1) // Recuperar
-                {
-                    auto recovered = audioEngine.recoverRecording(folder);
-                    if (recovered.existsAsFile())
-                        inlineWarning.show(
-                            Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
-                    else
-                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                            "BDG rec", Strings::get().falhaRecuperacao);
-                }
-                else if (result == 2) // Descartar
-                {
-                    audioEngine.discardRecording(folder);
+                    juce::AlertWindow::showAsync(options, [this, folder](int result)
+                    {
+                        if (result == 1) // Recuperar
+                        {
+                            auto recovered = audioEngine.recoverRecording(folder);
+                            if (recovered.existsAsFile())
+                                inlineWarning.show(
+                                    Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
+                            else
+                                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                                    "BDG rec", Strings::get().falhaRecuperacao);
+                        }
+                        else if (result == 2) // Descartar
+                        {
+                            audioEngine.discardRecording(folder);
+                        }
+                    });
                 }
             });
         }
-    });
+    }
 
     // Update checker — weekly GitHub release check
     updateChecker.checkIfDue(appProperties, [this](juce::String newVersion) {
@@ -177,8 +187,13 @@ void MainComponent::loadSettings()
         outputPanel.setCompressor    (props->getBoolValue("compressor",     false));
         outputPanel.setDeEsser       (props->getBoolValue("deEsser",        false));
 
-        // Language
-        juce::String lang = props->getValue("language", "pt");
+        // Language (auto-detect system locale on first launch)
+        juce::String lang = props->getValue("language", "");
+        if (lang.isEmpty())
+        {
+            auto sysLocale = juce::SystemStats::getUserLanguage();
+            lang = sysLocale.startsWith("pt") ? "pt" : "en";
+        }
         Strings::setLanguage(lang == "en" ? Language::EN : Language::PT);
     }
 }
