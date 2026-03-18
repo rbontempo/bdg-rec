@@ -14,6 +14,11 @@ COMO INSTALAR O BDG rec
    Isso so precisa ser feito uma vez.
    Depois disso o app abre normalmente.
 
+   Alternativa via Terminal:
+   Abra o Terminal e cole o comando abaixo:
+
+   sudo xattr -rd com.apple.quarantine "/Applications/BDG rec.app"
+
 Por que isso acontece?
 O BDG rec e um app gratuito e open source, mas nao possui
 assinatura da Apple (Apple Developer Program, $99/ano).
