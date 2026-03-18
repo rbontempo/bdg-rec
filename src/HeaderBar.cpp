@@ -89,7 +89,7 @@ void HeaderBar::resized()
     const int btnW = 24;
     const int btnH = 20;
     const int y = (h - btnH) / 2;
-    const int enX = w - 14 - 30 - btnW;      // left of "v1.0"
+    const int enX = w - 14 - 30 - btnW - 10;  // left of "v1.0" with spacing
     const int ptX = enX - btnW - 4;           // left of separator
 
     ptRect = { ptX, y, btnW, btnH };
