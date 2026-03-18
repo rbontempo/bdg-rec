@@ -92,7 +92,13 @@ jobs:
           else
             CHANGES=$(git log --pretty=format:"- %s" --no-merges -10 | grep -v "^- ci:\|^- chore:\|^- docs:" || true)
           fi
-          awk -v ver="$VERSION" -v changes="$CHANGES" '{gsub(/\$VERSION/, ver); gsub(/\$CHANGES/, changes); print}' resources/LEIA-ME.template.txt > resources/LEIA-ME.txt
+          # Write CHANGES to temp file, then use it for substitution
+          CHANGES_FILE=$(mktemp)
+          echo "$CHANGES" > "$CHANGES_FILE"
+          sed "s/\$VERSION/${VERSION}/g" resources/LEIA-ME.template.txt > resources/LEIA-ME.tmp
+          # Replace $CHANGES line with actual changelog content
+          sed -e '/\$CHANGES/{r '"$CHANGES_FILE" -e 'd;}' resources/LEIA-ME.tmp > resources/LEIA-ME.txt
+          rm -f resources/LEIA-ME.tmp "$CHANGES_FILE"
 
       - name: Create DMG
         run: |
