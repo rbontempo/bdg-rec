@@ -43,17 +43,18 @@ echo.
 echo [3/3] Creating installer package...
 if not exist dist mkdir dist
 
-:: Copy executable and dependencies
-set "OUTDIR=dist\BDG_REC_1.0.0_Windows"
+:: Extract version from CMakeLists.txt
+for /f "tokens=3" %%v in ('findstr /R "VERSION [0-9]" CMakeLists.txt') do set "VERSION=%%v"
+set "OUTDIR=dist\BDG_REC_%VERSION%_Windows"
 if exist "%OUTDIR%" rmdir /s /q "%OUTDIR%"
 mkdir "%OUTDIR%"
 
-copy "build-win\BDG_REC_artefacts\Release\BDG REC.exe" "%OUTDIR%\"
+copy "build-win\BDG_REC_artefacts\Release\BDG rec.exe" "%OUTDIR%\"
 
 echo.
 echo ============================================
 echo  Build complete!
-echo  Output: %OUTDIR%\BDG REC.exe
+echo  Output: %OUTDIR%\BDG rec.exe
 echo ============================================
 echo.
 pause

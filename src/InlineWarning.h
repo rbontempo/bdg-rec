@@ -17,13 +17,15 @@ public:
         setAlwaysOnTop(true);
     }
 
-    void show(const juce::String& msg, Level lvl = Warning, int /*autoHideMs*/ = 5000)
+    void show(const juce::String& msg, Level lvl = Warning, int autoHideMs = 5000)
     {
         message = msg;
         level = lvl;
         alpha = 1.0f;
         fading = false;
         stopTimer();
+        if (autoHideMs > 0)
+            autoHideCountdown = autoHideMs;
 
         // Derive title from level (bilingual)
         bool isEN = Strings::getLanguage() == Language::EN;
@@ -62,24 +64,37 @@ public:
 
         setVisible(true);
         repaint();
+
+        if (autoHideCountdown > 0)
+            startTimerHz(30);
     }
 
     void hide()
     {
         stopTimer();
         fading = false;
+        autoHideCountdown = 0;
         setVisible(false);
     }
 
     void mouseDown(const juce::MouseEvent&) override
     {
         // Click anywhere on the card to dismiss
+        autoHideCountdown = 0;
         fading = true;
         startTimerHz(30);
     }
 
     void timerCallback() override
     {
+        if (!fading && autoHideCountdown > 0)
+        {
+            autoHideCountdown -= 33; // ~30fps
+            if (autoHideCountdown <= 0)
+                fading = true;
+            return;
+        }
+
         alpha -= 0.08f;
         if (alpha <= 0.0f)
         {
@@ -215,6 +230,7 @@ private:
     Level level = Warning;
     float alpha = 1.0f;
     bool  fading = false;
+    int   autoHideCountdown = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InlineWarning)
 };

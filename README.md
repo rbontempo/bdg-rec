@@ -35,14 +35,14 @@ Go to [Releases](../../releases) for the latest installers:
 ```bash
 ./build-macos.sh
 ```
-Output: `dist/BDG_REC_1.0.0_macOS.dmg`
+Output: `dist/BDG_REC_<version>_macOS.dmg`
 
 ### Windows
 Open "Developer Command Prompt for VS 2022" and run:
 ```bat
 build-windows.bat
 ```
-Output: `dist\BDG_REC_1.0.0_Windows\BDG rec.exe`
+Output: `dist\BDG_REC_<version>_Windows\BDG rec.exe`
 
 ## Tech Stack
 

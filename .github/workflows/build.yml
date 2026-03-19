@@ -24,7 +24,7 @@ jobs:
         id: bump
         run: |
           # Read version from CMakeLists.txt
-          VERSION=$(grep -oP 'VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          VERSION=$(grep -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | awk '{print $2}')
           MAJOR=$(echo $VERSION | cut -d. -f1)
           MINOR=$(echo $VERSION | cut -d. -f2)
           PATCH=$(echo $VERSION | cut -d. -f3)
@@ -32,16 +32,8 @@ jobs:
           # Check if this tag already exists
           NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
           if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
-            # Tag exists — bump version (patch +1, roll over at 9)
+            # Tag exists — bump patch version
             PATCH=$((PATCH + 1))
-            if [ "$PATCH" -gt 9 ]; then
-              PATCH=0
-              MINOR=$((MINOR + 1))
-            fi
-            if [ "$MINOR" -gt 9 ]; then
-              MINOR=0
-              MAJOR=$((MAJOR + 1))
-            fi
             NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
             NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 

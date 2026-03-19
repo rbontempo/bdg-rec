@@ -37,7 +37,10 @@ private:
     juce::Array<juce::var> eventQueue;
 
     static constexpr int BATCH_INTERVAL_MS = 30000;
+    static constexpr int MAX_BATCH_INTERVAL_MS = 480000; // 8 min max backoff
     static constexpr int MAX_QUEUE_SIZE = 500;
+    int currentIntervalMs = BATCH_INTERVAL_MS;
+    int consecutiveFailures = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyticsReporter)
 };

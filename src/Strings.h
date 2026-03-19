@@ -29,6 +29,10 @@ struct StringTable
     juce::String menuAbout, menuCheckUpdates, menuLanguage, menuQuit;
     juce::String menuWebsite, menuPortal;
     juce::String aboutBody;
+    // InputPanel — BDG links
+    juce::String areaRestrita, portalCliente, editePodcast;
+    // OutputPanel
+    juce::String selecionarPasta;
 };
 
 namespace Strings
@@ -94,6 +98,12 @@ namespace Strings
         "Website BDG",
         "Portal do cliente",
         juce::CharPointer_UTF8 ("Gravador de \xc3\xa1" "udio profissional\npara podcasts e longas grava\xc3\xa7\xc3\xb5" "es.\n\nBicho de Goiaba\nwww.bichodegoiaba.com.br"),
+        // InputPanel — BDG links
+        juce::CharPointer_UTF8 ("\xc3\x81" "rea restrita para clientes BDG"),
+        "Portal do cliente",
+        "Edite seu podcast com o Bicho de Goiaba",
+        // OutputPanel
+        "Selecionar pasta de destino",
     };
 
     // English table
@@ -142,6 +152,12 @@ namespace Strings
         "BDG Website",
         "Client portal",
         "Professional audio recorder\nfor podcasts and long recordings.\n\nBicho de Goiaba\nwww.bichodegoiaba.com.br",
+        // InputPanel — BDG links
+        "Restricted area for BDG clients",
+        "Client portal",
+        "Edit your podcast with Bicho de Goiaba",
+        // OutputPanel
+        "Select destination folder",
     };
 
     // Current language (default: Portuguese)

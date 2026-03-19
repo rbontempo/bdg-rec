@@ -96,7 +96,7 @@ void AnalyticsReporter::run()
 {
     while (!threadShouldExit())
     {
-        wait(BATCH_INTERVAL_MS);
+        wait(currentIntervalMs);
         if (threadShouldExit()) break;
         sendBatch();
     }
@@ -133,6 +133,8 @@ void AnalyticsReporter::sendBatch()
         juce::ScopedLock lock(queueLock);
         for (auto& evt : batch)
             eventQueue.add(evt);
+        consecutiveFailures++;
+        currentIntervalMs = juce::jmin(BATCH_INTERVAL_MS * (1 << consecutiveFailures), MAX_BATCH_INTERVAL_MS);
         return;
     }
 
@@ -143,6 +145,13 @@ void AnalyticsReporter::sendBatch()
         juce::ScopedLock lock(queueLock);
         for (auto& evt : batch)
             eventQueue.add(evt);
+        consecutiveFailures++;
+        currentIntervalMs = juce::jmin(BATCH_INTERVAL_MS * (1 << consecutiveFailures), MAX_BATCH_INTERVAL_MS);
+    }
+    else
+    {
+        consecutiveFailures = 0;
+        currentIntervalMs = BATCH_INTERVAL_MS;
     }
 }
 

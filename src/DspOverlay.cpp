@@ -16,6 +16,7 @@ DspOverlay::DspOverlay()
 
 DspOverlay::~DspOverlay()
 {
+    alive->store(false);
     stopTimer();
 }
 
@@ -61,7 +62,9 @@ void DspOverlay::setCurrentStep(const juce::String& stepName)
         }
     }
 
-    juce::MessageManager::callAsync([this]() { repaint(); });
+    auto flag = alive;
+    auto* self = this;
+    juce::MessageManager::callAsync([self, flag]() { if (flag->load()) self->repaint(); });
 }
 
 void DspOverlay::hide()

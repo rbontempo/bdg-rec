@@ -1,6 +1,7 @@
 #include "Dsp.h"
 #include <cmath>
 #include <vector>
+#include <deque>
 #include <algorithm>
 #include "rnnoise.h"
 
@@ -39,14 +40,18 @@ void Dsp::normalize(juce::AudioBuffer<float>& buffer, double sampleRate)
     // Find peak envelope with lookahead
     std::vector<float> envelope(numSamples, 0.0f);
 
-    // Forward pass: find the max peak within the next `lookahead` samples
-    for (int i = 0; i < numSamples; ++i)
+    // Forward pass: sliding window maximum via monotonic deque — O(n)
     {
-        float peak = std::abs(data[i]);
-        int end = std::min(i + lookahead, numSamples);
-        for (int j = i + 1; j < end; ++j)
-            peak = std::max(peak, std::abs(data[j]));
-        envelope[i] = peak;
+        std::deque<int> dq;
+        for (int i = numSamples - 1; i >= 0; --i)
+        {
+            while (!dq.empty() && dq.front() >= i + lookahead)
+                dq.pop_front();
+            while (!dq.empty() && std::abs(data[dq.back()]) <= std::abs(data[i]))
+                dq.pop_back();
+            dq.push_back(i);
+            envelope[i] = std::abs(data[dq.front()]);
+        }
     }
 
     // Apply gain reduction with release

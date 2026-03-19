@@ -16,7 +16,7 @@ public:
                     std::function<void(juce::String newVersion)> onUpdateAvailable);
 
     /// Manual check triggered from menu — bypasses 7-day interval.
-    void forceCheck();
+    void forceCheck(std::function<void(juce::String)> onUpdateAvailable = {});
 
 private:
     void run() override;

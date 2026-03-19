@@ -758,10 +758,19 @@ void AudioEngine::processRecording(const juce::File& file,
                 return;
             }
 
-            const int numSamples = static_cast<int>(reader->lengthInSamples);
+            const juce::int64 totalSamples = reader->lengthInSamples;
             const double sampleRate = reader->sampleRate;
             const int bitsPerSample = reader->bitsPerSample;
 
+            // Limit to ~6 hours at 48kHz (~1 billion samples) to avoid excessive memory use
+            constexpr juce::int64 maxSamples = 1'036'800'000LL;
+            if (totalSamples > maxSamples)
+            {
+                emitError("File too large for DSP processing (>" + juce::String(maxSamples / (juce::int64)sampleRate / 3600) + "h)");
+                return;
+            }
+
+            const int numSamples = static_cast<int>(totalSamples);
             juce::AudioBuffer<float> buffer(1, numSamples);
             reader->read(&buffer, 0, numSamples, 0, true, false);
             reader.reset(); // close the file
@@ -817,8 +826,6 @@ void AudioEngine::processRecording(const juce::File& file,
                 emitStep("de_esser");
                 Dsp::deEss(buffer, sampleRate);
             }
-
-            if (threadShouldExit()) { emitError("Cancelado"); return; }
 
             if (threadShouldExit()) { emitError("Cancelado"); return; }
 

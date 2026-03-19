@@ -31,6 +31,7 @@ private:
     };
 
     juce::Array<Step> steps;
+    std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>>(true) };
 
     float spinAngle   = 0.0f;
     float pulseAlpha  = 1.0f;

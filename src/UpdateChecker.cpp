@@ -26,10 +26,12 @@ void UpdateChecker::checkIfDue(juce::ApplicationProperties& props,
     startThread(juce::Thread::Priority::low);
 }
 
-void UpdateChecker::forceCheck()
+void UpdateChecker::forceCheck(std::function<void(juce::String)> onUpdateAvailable)
 {
     if (isThreadRunning())
         return; // already checking
+    if (onUpdateAvailable)
+        callback = std::move(onUpdateAvailable);
     startThread(juce::Thread::Priority::low);
 }
 

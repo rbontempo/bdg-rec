@@ -42,49 +42,12 @@ fi
 DMG_STAGE=$(mktemp -d)
 cp -R "build-release/BDG_REC_artefacts/Release/BDG rec.app" "$DMG_STAGE/"
 
-cat > "$DMG_STAGE/LEIA-ME.txt" <<LEIATXT
-COMO INSTALAR O BDG rec
-=======================
-
-1. Arraste o BDG rec para a pasta Applications.
-
-2. Na primeira vez que abrir, o macOS pode bloquear o app
-   com a mensagem "BDG rec Not Opened".
-
-   Para resolver:
-   - Clique com o botao direito (ou Control+clique) no BDG rec
-   - Selecione "Abrir"
-   - No dialog que aparecer, clique "Abrir" novamente
-
-   Isso so precisa ser feito uma vez.
-   Depois disso o app abre normalmente.
-
-   Alternativa via Terminal:
-   Abra o Terminal e cole o comando abaixo:
-
-   sudo xattr -rd com.apple.quarantine "/Applications/BDG rec.app"
-
-Por que isso acontece?
-O BDG rec e um app gratuito e open source, mas nao possui
-assinatura da Apple (Apple Developer Program, \$99/ano).
-O macOS bloqueia apps nao assinados por seguranca, mas voce
-pode autorizar manualmente como descrito acima.
-
-
-Versao ${VERSION} — Novidades
-=========================
-
-${CHANGES}
-
-
-Sobre
-=====
-
-BDG rec e um software desenvolvido pelo Bicho de Goiaba.
-www.bichodegoiaba.com.br
-
-Codigo fonte: https://github.com/rbontempo/bdg-rec
-LEIATXT
+# Generate LEIA-ME.txt from template
+CHANGES_FILE=$(mktemp)
+echo "$CHANGES" > "$CHANGES_FILE"
+sed "s/\$VERSION/${VERSION}/g" resources/LEIA-ME.template.txt > "$DMG_STAGE/LEIA-ME.tmp"
+sed -e '/\$CHANGES/{r '"$CHANGES_FILE" -e 'd;}' "$DMG_STAGE/LEIA-ME.tmp" > "$DMG_STAGE/LEIA-ME.txt"
+rm -f "$DMG_STAGE/LEIA-ME.tmp" "$CHANGES_FILE"
 ln -s /Applications "$DMG_STAGE/Applications"
 mkdir -p "$DMG_STAGE/.background"
 cp "resources/fundo-instalacao.png" "$DMG_STAGE/.background/"
@@ -123,8 +86,10 @@ APPLESCRIPT
 hdiutil detach "/Volumes/$VOL_NAME"
 
 # Compress to final DMG
-DMG_RW="$DMG_PATH"
-hdiutil convert "$DMG_RW" -format UDZO -ov -o "$DMG_PATH"
+DMG_TMP="${DMG_PATH%.dmg}_rw.dmg"
+mv "$DMG_PATH" "$DMG_TMP"
+hdiutil convert "$DMG_TMP" -format UDZO -ov -o "$DMG_PATH"
+rm -f "$DMG_TMP"
 
 echo
 echo "[4/4] Done!"

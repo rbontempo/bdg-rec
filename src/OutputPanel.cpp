@@ -87,7 +87,7 @@ OutputPanel::OutputPanel()
 void OutputPanel::openFolderChooser()
 {
     fileChooser = std::make_unique<juce::FileChooser>(
-        "Selecionar pasta de destino",
+        Strings::get().selecionarPasta,
         destFolder,
         "",
         true);
