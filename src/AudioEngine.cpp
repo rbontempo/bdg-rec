@@ -186,7 +186,36 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     if (device != nullptr)
     {
-        nativeSampleRate.store(device->getCurrentSampleRate());
+        const double newRate = device->getCurrentSampleRate();
+
+        // The device can reopen at a different rate mid-take without the user
+        // touching anything (unplugging an interface, toggling monitoring).
+        // Carrying on would feed new-rate samples into a writer built for the
+        // old rate, and the concatenation copies raw samples without
+        // resampling — every earlier chunk would come out at the wrong pitch
+        // and duration. Salvage what we have instead of corrupting it.
+        if (recording.load()
+            && newRate != nativeSampleRate.load()
+            && ! deviceMismatch.exchange(true))
+        {
+            auto aliveFlag = alive;
+            juce::MessageManager::callAsync([this, aliveFlag]()
+            {
+                if (! aliveFlag->load() || ! recording.load())
+                    return;
+
+                auto saved = stopRecording();
+                if (saved != juce::File())
+                    listeners.call(&Listener::recordingStoppedDeviceChanged, saved);
+            });
+
+            // Leave nativeSampleRate alone: concatenateChunks() writes the
+            // final header with it, and it must stay at the rate the chunks
+            // on disk were actually recorded at.
+            return;
+        }
+
+        nativeSampleRate.store(newRate);
         int ch = device->getActiveInputChannels().countNumberOfSetBits();
         if (ch == 0) ch = 1;
         nativeChannels.store(ch);
@@ -271,7 +300,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     }
 
     // ---- Recording pipeline ----
-    if (recording.load())
+    // deviceMismatch means the rate changed under us: stop feeding the writer
+    // at once, but leave `recording` set so stopRecording() still saves.
+    if (recording.load() && ! deviceMismatch.load())
     {
         // Downmix all input channels to mono, applying gain
         juce::AudioBuffer<float> monoBuffer(1, numSamples);
@@ -390,6 +421,7 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
 
     samplesPerChunk = (juce::int64)(BDG_CHUNK_SECONDS * nativeSampleRate.load());
     chunkIndex = 0;
+    deviceMismatch.store(false);
 
     if (!openNextChunk())
     {

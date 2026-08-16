@@ -35,6 +35,8 @@ struct StringTable
     juce::String selecionarPasta;
     // Recording save failure (chunks preserved)
     juce::String falhaSalvar;
+    // Recording stopped because the audio device changed sample rate
+    juce::String gravacaoParadaDispositivo;
     // Analytics consent (first run)
     juce::String consentTitulo, consentCorpo, consentAceitar, consentRecusar;
 };
@@ -111,6 +113,9 @@ namespace Strings
         // Recording save failure
         juce::CharPointer_UTF8 ("N\xc3\xa3" "o foi poss\xc3\xad" "vel salvar o arquivo final (disco cheio?). "
                                 "A grava\xc3\xa7\xc3\xa3" "o foi preservada e ser\xc3\xa1 recuperada na pr\xc3\xb3" "xima vez que abrir o app."),
+        // Device sample-rate change
+        juce::CharPointer_UTF8 ("A grava\xc3\xa7\xc3\xa3" "o foi encerrada porque o dispositivo de \xc3\xa1" "udio mudou. "
+                                "O que j\xc3\xa1 havia sido gravado foi salvo."),
         // Analytics consent
         juce::CharPointer_UTF8 ("Dados de uso"),
         juce::CharPointer_UTF8 ("O BDG rec pode enviar dados an\xc3\xb4" "nimos de uso (sistema, vers\xc3\xa3" "o, "
@@ -177,6 +182,9 @@ namespace Strings
         // Recording save failure
         "Could not save the final file (disk full?). Your recording was preserved "
         "and will be recovered the next time you open the app.",
+        // Device sample-rate change
+        "Recording stopped because the audio device changed. What had already been "
+        "recorded was saved.",
         // Analytics consent
         "Usage data",
         "BDG rec can send anonymous usage data (system, version, microphone type, "

@@ -29,6 +29,9 @@ public:
         // deleted — they stay in this folder and the orphan-recovery flow can
         // pick them up on the next launch.
         virtual void recordingSaveFailed(const juce::File& preservedChunkFolder) {}
+        // Recording ended because the device reopened at a different sample
+        // rate. Everything captured up to that point is in `saved`.
+        virtual void recordingStoppedDeviceChanged(const juce::File& saved) {}
     };
 
     //==============================================================================
@@ -141,6 +144,11 @@ private:
     std::atomic<juce::int64> samplesInChunk{0};
     juce::int64 samplesPerChunk{0}; // 5 min * sampleRate
     std::atomic<bool> chunkRotationPending{false};
+
+    // Set when the device reopens at a rate the current chunks weren't
+    // written at. Stops the write path immediately, without clearing
+    // `recording` — stopRecording() still has to run to save what we have.
+    std::atomic<bool> deviceMismatch{false};
 
     // SpinLock to protect threadedWriter during chunk rotation
     juce::SpinLock writerLock;

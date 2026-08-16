@@ -32,6 +32,7 @@ public:
     void diskSpaceWarning(int remainingMinutes) override; // Task 2
     void recordingAutoStopped() override; // Task 2
     void recordingSaveFailed(const juce::File& preservedChunkFolder) override;
+    void recordingStoppedDeviceChanged(const juce::File& saved) override;
 
 private:
     BdgLookAndFeel bdgLookAndFeel;

@@ -311,6 +311,29 @@ void MainComponent::recordingSaveFailed(const juce::File& preservedChunkFolder)
     });
 }
 
+void MainComponent::recordingStoppedDeviceChanged(const juce::File& saved)
+{
+    juce::MessageManager::callAsync([this, saved]() {
+        isRecording = false;
+        inputPanel.setRecordingActive(false);
+        inputPanel.refreshDeviceList();
+        recordingPanel.stopRecording();
+        inlineWarning.hide();
+
+        analyticsReporter.trackEvent("error", [&]() {
+            auto extra = new juce::DynamicObject();
+            extra->setProperty("error_code", "device_rate_changed");
+            extra->setProperty("message", "Device reopened at a different sample rate");
+            return juce::var(extra);
+        }());
+
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+            "BDG rec", Strings::get().gravacaoParadaDispositivo);
+
+        saved.revealToUser();
+    });
+}
+
 //==============================================================================
 // Analytics consent (first run)
 //==============================================================================
