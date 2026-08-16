@@ -106,6 +106,13 @@ void InputPanel::setRecordingActive(bool active)
 {
     recordingActive = active;
     deviceCombo.setEnabled(!active);
+
+    // Hot-plug events are ignored while recording, so the list can be stale by
+    // the time we unlock it — catch up now rather than waiting for the next
+    // unrelated device event.
+    if (! active)
+        refreshDeviceList();
+
     repaint();
 }
 

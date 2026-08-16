@@ -241,7 +241,9 @@ void MainComponent::devicesChanged()
     // Refresh the input device ComboBox
     inputPanel.refreshDeviceList();
 
-    // If we were recording and the device is gone, show error
+    // A disconnect during recording is now stopped and reported by the engine
+    // through recordingStoppedDeviceChanged (which also carries the salvaged
+    // file); only the analytics breadcrumb belongs here.
     if (isRecording && audioEngine.getCurrentInputDeviceName().isEmpty())
     {
         analyticsReporter.trackEvent("error", [&]() {
@@ -250,13 +252,6 @@ void MainComponent::devicesChanged()
             extra->setProperty("message", "Device disconnected during recording");
             return juce::var(extra);
         }());
-
-        isRecording = false;
-        inputPanel.setRecordingActive(false);
-        inputPanel.refreshDeviceList();
-        recordingPanel.stopRecording();
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG rec", Strings::get().dispositivoDesconectado);
     }
 }
 
@@ -278,7 +273,9 @@ void MainComponent::diskSpaceWarning(int remainingMinutes)
 
 void MainComponent::recordingAutoStopped()
 {
-    juce::MessageManager::callAsync([this]() {
+    auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag]() {
+        if (! aliveFlag->load()) return;
         isRecording = false;
         inputPanel.setRecordingActive(false);
         recordingPanel.stopRecording();
@@ -290,7 +287,9 @@ void MainComponent::recordingAutoStopped()
 
 void MainComponent::recordingSaveFailed(const juce::File& preservedChunkFolder)
 {
-    juce::MessageManager::callAsync([this, preservedChunkFolder]() {
+    auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag, preservedChunkFolder]() {
+        if (! aliveFlag->load()) return;
         isRecording = false;
         inputPanel.setRecordingActive(false);
         recordingPanel.stopRecording();
@@ -313,10 +312,11 @@ void MainComponent::recordingSaveFailed(const juce::File& preservedChunkFolder)
 
 void MainComponent::recordingStoppedDeviceChanged(const juce::File& saved)
 {
-    juce::MessageManager::callAsync([this, saved]() {
+    auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag, saved]() {
+        if (! aliveFlag->load()) return;
         isRecording = false;
         inputPanel.setRecordingActive(false);
-        inputPanel.refreshDeviceList();
         recordingPanel.stopRecording();
         inlineWarning.hide();
 
@@ -347,8 +347,8 @@ void MainComponent::askAnalyticsConsentIfNeeded()
                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
                         .withTitle(Strings::get().consentTitulo)
                         .withMessage(Strings::get().consentCorpo)
-                        .withButton(Strings::get().consentAceitar)   // index 0
-                        .withButton(Strings::get().consentRecusar);  // index 1
+                        .withButton(Strings::get().consentAceitar)   // -> 1
+                        .withButton(Strings::get().consentRecusar);  // -> 0 (also Esc/close)
 
         auto aliveFlag = uiAlive;
         juce::AlertWindow::showAsync(opts, [this, aliveFlag](int result)
@@ -356,7 +356,12 @@ void MainComponent::askAnalyticsConsentIfNeeded()
             if (! aliveFlag->load())
                 return;
 
-            const bool allowed = (result == 0);
+            // JUCE gives the first button id 1 and the last id 0, and binds 0
+            // to Escape and the close box (see LookAndFeel_V2::createAlertWindow,
+            // and the recovery dialog above). Testing for 1 makes every other
+            // outcome — Escape, closing the window — a refusal, which is the
+            // only safe default for a consent prompt.
+            const bool allowed = (result == 1);
             analyticsReporter.setConsent(allowed);
 
             // Consent decides whether the session-open event is collected at
@@ -420,6 +425,13 @@ void MainComponent::handleRecordButtonClicked()
             isRecording = true;
             diskWarningShown = false;
             inputPanel.setRecordingActive(true);
+
+            // Persist destFolder now. Crash recovery only scans when this key
+            // exists (to avoid provoking the macOS folder-permission dialog on
+            // a first launch), and a user who never opened settings would
+            // otherwise never get their interrupted take offered back — the
+            // very promise the save-failure message makes.
+            saveSettings();
             recordingPanel.startRecording(folder);
         }
         else
@@ -686,6 +698,10 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const juce
     {
         menu.addItem(idWebsite, s.menuWebsite);
         menu.addItem(idPortal, s.menuPortal);
+        menu.addSeparator();
+        // Lives here rather than in the Apple menu because that one is built
+        // once at startup, which would freeze the tick mark.
+        menu.addItem(idAnalytics, s.menuAnalytics, true, analyticsReporter.isEnabled());
     }
 #else
     if (topLevelMenuIndex == 0) // BDG rec
@@ -700,6 +716,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const juce
         langMenu.addItem(idLangEN, "EN", true, !isPt);
         menu.addSubMenu(s.menuLanguage, langMenu);
 
+        menu.addSeparator();
+        menu.addItem(idAnalytics, s.menuAnalytics, true, analyticsReporter.isEnabled());
         menu.addSeparator();
         menu.addItem(idQuit, s.menuQuit);
     }
@@ -749,6 +767,12 @@ void MainComponent::menuItemSelected(int menuItemID, int)
             break;
         case idPortal:
             juce::URL("https://cliente.bichodegoiaba.com.br/").launchInDefaultBrowser();
+            break;
+        case idAnalytics:
+            // The consent dialog tells the user they can change their mind
+            // from the menu — this is that control.
+            analyticsReporter.setConsent(! analyticsReporter.isEnabled());
+            menuItemsChanged();
             break;
         default:
             break;

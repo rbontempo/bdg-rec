@@ -1,6 +1,5 @@
 #include "AudioEngine.h"
 #include "Dsp.h"
-#include "Strings.h"
 
 // Length of each on-disk chunk. Overridable at build time so the rotation and
 // concatenation paths can be exercised by a test without recording for
@@ -370,14 +369,16 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
     // This is called on the message thread by AudioDeviceManager when
     // the device configuration changes (including hot-plug events).
 
-    // If we are recording and the current device is gone, stop recording
-    if (recording.load())
+    // If we are recording and the current device is gone, stop recording.
+    // The take is handed to the listener so it can be revealed and processed
+    // like any other; if the save itself failed, stopRecording() has already
+    // reported that through recordingSaveFailed and we stay quiet here rather
+    // than stacking a second dialog on top.
+    if (recording.load() && deviceManager.getCurrentAudioDevice() == nullptr)
     {
-        if (deviceManager.getCurrentAudioDevice() == nullptr)
-        {
-            stopRecording();
-            listeners.call(&Listener::dspError, Strings::get().audioDesconectado);
-        }
+        auto saved = stopRecording();
+        if (saved != juce::File())
+            listeners.call(&Listener::recordingStoppedDeviceChanged, saved);
     }
 
     // Notify all listeners so UI can refresh device list
@@ -550,7 +551,7 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks()
     juce::int64 samplesExpected = 0;
     juce::int64 samplesWritten  = 0;
     bool allWritesSucceeded = true;
-    bool anyChunkRead = false;
+    int  chunksSkipped = 0;
 
     for (int i = 1; i <= chunkIndex; ++i)
     {
@@ -562,12 +563,15 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks()
 
         if (reader == nullptr)
         {
+            // Salvage policy: an unreadable chunk costs us that chunk, not the
+            // whole take. Failing here would delete a final file that still
+            // holds every other chunk. Only a failed *write* (a full disk) is
+            // fatal, because then the output itself is untrustworthy.
             DBG("  concatenateChunks: skipping corrupted chunk " + juce::String(i));
-            allWritesSucceeded = false;
+            ++chunksSkipped;
             continue;
         }
 
-        anyChunkRead = true;
         const juce::int64 totalSamples = reader->lengthInSamples;
         samplesExpected += totalSamples;
 
@@ -601,24 +605,35 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks()
     delete finalWriter;
 
     // Final proof: read the finished file back and check it actually holds
-    // every sample. Cheap, and it catches truncation the write path missed.
+    // every sample we set out to write. Cheap, and it catches truncation the
+    // write path missed. A take with no samples at all (started and stopped
+    // inside one buffer, or no microphone permission) is an honest empty
+    // result, not a save failure — reporting "disk full" for it would be a lie.
     bool verified = false;
-    if (allWritesSucceeded && anyChunkRead && samplesWritten == samplesExpected && samplesWritten > 0)
+    if (allWritesSucceeded && samplesWritten == samplesExpected)
     {
-        std::unique_ptr<juce::AudioFormatReader> check(
-            formatManager.createReaderFor(finalFile));
-
-        if (check != nullptr && check->lengthInSamples == samplesExpected)
+        if (samplesWritten == 0)
+        {
             verified = true;
+        }
         else
-            DBG("  concatenateChunks: verification FAILED on final file");
+        {
+            std::unique_ptr<juce::AudioFormatReader> check(
+                formatManager.createReaderFor(finalFile));
+
+            if (check != nullptr && check->lengthInSamples == samplesExpected)
+                verified = true;
+            else
+                DBG("  concatenateChunks: verification FAILED on final file");
+        }
     }
 
     result.ok = verified;
 
     DBG("  concatenateChunks: final file = " + finalFile.getFullPathName()
         + " ok=" + juce::String(verified ? "yes" : "no")
-        + " samples=" + juce::String(samplesWritten) + "/" + juce::String(samplesExpected));
+        + " samples=" + juce::String(samplesWritten) + "/" + juce::String(samplesExpected)
+        + " skippedChunks=" + juce::String(chunksSkipped));
 
     return result;
 }

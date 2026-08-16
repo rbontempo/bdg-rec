@@ -88,7 +88,8 @@ private:
         idLangEN,
         idQuit,
         idWebsite,
-        idPortal
+        idPortal,
+        idAnalytics
     };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

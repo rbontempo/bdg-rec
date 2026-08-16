@@ -39,6 +39,7 @@ struct StringTable
     juce::String gravacaoParadaDispositivo;
     // Analytics consent (first run)
     juce::String consentTitulo, consentCorpo, consentAceitar, consentRecusar;
+    juce::String menuAnalytics;
 };
 
 namespace Strings
@@ -125,6 +126,7 @@ namespace Strings
                                 "Voc\xc3\xaa pode mudar de ideia a qualquer momento no menu."),
         juce::CharPointer_UTF8 ("Permitir"),
         juce::CharPointer_UTF8 ("N\xc3\xa3" "o enviar"),
+        juce::CharPointer_UTF8 ("Enviar dados de uso an\xc3\xb4" "nimos"),
     };
 
     // English table
@@ -193,6 +195,7 @@ namespace Strings
         "time from the menu.",
         "Allow",
         "Don't send",
+        "Send anonymous usage data",
     };
 
     // Current language (default: Portuguese)

@@ -128,7 +128,10 @@ void AnalyticsReporter::setContext(const juce::String& os,
 
 void AnalyticsReporter::trackEvent(const juce::String& eventType, const juce::var& extra)
 {
-    if (! enabled.load())
+    // Nothing is collected before the prompt is answered. Queuing early would
+    // both persist data the user never agreed to and stamp the events with an
+    // empty machine_id, since the id is only minted on consent.
+    if (! enabled.load() || ! consentAsked.load())
         return;
 
     auto evt = new juce::DynamicObject();
@@ -246,7 +249,8 @@ void AnalyticsReporter::loadPendingEvents()
 void AnalyticsReporter::savePendingEvents()
 {
     if (appProps == nullptr) return;
-    if (! enabled.load()) return;   // never spool events the user opted out of
+    // Never spool events the user opted out of — or hasn't answered for yet.
+    if (! enabled.load() || ! consentAsked.load()) return;
 
     juce::ScopedLock lock(queueLock);
     if (eventQueue.isEmpty()) return;
