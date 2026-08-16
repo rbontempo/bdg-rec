@@ -39,17 +39,72 @@ void AnalyticsReporter::initialise(juce::ApplicationProperties& props, const juc
 
     if (auto* pf = props.getUserSettings())
     {
-        machineId = pf->getValue("machineId", "");
-        if (machineId.isEmpty())
+        consentAsked.store(pf->getBoolValue("analyticsConsentAsked", false));
+        enabled.store(pf->getBoolValue("analyticsEnabled", true));
+
+        // Only mint a machine id once the user has actually agreed — opting
+        // out must not leave a persistent identifier behind on disk.
+        if (consentAsked.load() && enabled.load())
         {
-            machineId = generateMachineId();
-            pf->setValue("machineId", machineId);
+            machineId = pf->getValue("machineId", "");
+            if (machineId.isEmpty())
+            {
+                machineId = generateMachineId();
+                pf->setValue("machineId", machineId);
+                pf->saveIfNeeded();
+            }
+        }
+    }
+
+    if (enabled.load())
+        loadPendingEvents();
+
+    startThread(juce::Thread::Priority::low);
+}
+
+bool AnalyticsReporter::hasAskedConsent() const
+{
+    return consentAsked.load();
+}
+
+void AnalyticsReporter::setConsent(bool allowed)
+{
+    enabled.store(allowed);
+    consentAsked.store(true);
+
+    if (appProps != nullptr)
+    {
+        if (auto* pf = appProps->getUserSettings())
+        {
+            pf->setValue("analyticsConsentAsked", true);
+            pf->setValue("analyticsEnabled", allowed);
+
+            if (allowed)
+            {
+                if (machineId.isEmpty())
+                {
+                    machineId = generateMachineId();
+                    pf->setValue("machineId", machineId);
+                }
+            }
+            else
+            {
+                // Opting out clears everything already held: the queued
+                // events, anything spooled to disk, and the identifier.
+                machineId.clear();
+                pf->removeValue("machineId");
+                pf->setValue("pendingAnalytics", "");
+            }
+
             pf->saveIfNeeded();
         }
     }
 
-    loadPendingEvents();
-    startThread(juce::Thread::Priority::low);
+    if (! allowed)
+    {
+        juce::ScopedLock lock(queueLock);
+        eventQueue.clear();
+    }
 }
 
 juce::String AnalyticsReporter::generateMachineId()
@@ -73,6 +128,9 @@ void AnalyticsReporter::setContext(const juce::String& os,
 
 void AnalyticsReporter::trackEvent(const juce::String& eventType, const juce::var& extra)
 {
+    if (! enabled.load())
+        return;
+
     auto evt = new juce::DynamicObject();
     evt->setProperty("event", eventType);
     evt->setProperty("machine_id", machineId);
@@ -104,6 +162,10 @@ void AnalyticsReporter::run()
 
 void AnalyticsReporter::sendBatch()
 {
+    // Hold, don't send, until the first-run prompt has been answered.
+    if (! enabled.load() || ! consentAsked.load())
+        return;
+
     juce::Array<juce::var> batch;
     {
         juce::ScopedLock lock(queueLock);
@@ -184,6 +246,8 @@ void AnalyticsReporter::loadPendingEvents()
 void AnalyticsReporter::savePendingEvents()
 {
     if (appProps == nullptr) return;
+    if (! enabled.load()) return;   // never spool events the user opted out of
+
     juce::ScopedLock lock(queueLock);
     if (eventQueue.isEmpty()) return;
 

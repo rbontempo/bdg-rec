@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Must be set before project() or CMake defaults the minimum to the host's
+# macOS version — which silently locks the app to whatever the build machine
+# happens to be running. 11.0 is the oldest release supporting both slices
+# of the universal binary.
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+endif()
+
 project(BDG_REC VERSION 1.1.9 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)

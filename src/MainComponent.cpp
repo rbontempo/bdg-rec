@@ -128,16 +128,24 @@ MainComponent::MainComponent()
         showUpdateDialog(newVersion);
     });
 
-    // Analytics
+    // Analytics — nothing is collected or sent until the user has answered
+    // the consent prompt; on later runs the stored answer applies silently.
     analyticsReporter.initialise(appProperties, "https://rec.bdg.fm/api/events.php");
     updateAnalyticsContext();
-    analyticsReporter.trackEvent("app_open");
+
+    if (analyticsReporter.hasAskedConsent())
+        analyticsReporter.trackEvent("app_open");
+    else
+        askAnalyticsConsentIfNeeded();
 
     setSize(720, 420);
 }
 
 MainComponent::~MainComponent()
 {
+    // Stop any in-flight async dialog callback from touching a dead object.
+    uiAlive->store(false);
+
 #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu(nullptr);
 #endif
@@ -158,7 +166,8 @@ void MainComponent::updateAnalyticsContext()
     analyticsReporter.setContext(
         juce::SystemStats::getOperatingSystemName(),
         juce::String(JUCE_APPLICATION_VERSION_STRING),
-        audioEngine.getCurrentInputDeviceName(),
+        // Device *category*, never the name — "AirPods do Renato" is personal data.
+        audioEngine.getCurrentInputDeviceCategory(),
         Strings::getLanguage() == Language::EN ? "en" : "pt-BR"
     );
 }
@@ -243,6 +252,8 @@ void MainComponent::devicesChanged()
         }());
 
         isRecording = false;
+        inputPanel.setRecordingActive(false);
+        inputPanel.refreshDeviceList();
         recordingPanel.stopRecording();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
             "BDG rec", Strings::get().dispositivoDesconectado);
@@ -269,10 +280,70 @@ void MainComponent::recordingAutoStopped()
 {
     juce::MessageManager::callAsync([this]() {
         isRecording = false;
+        inputPanel.setRecordingActive(false);
         recordingPanel.stopRecording();
         inlineWarning.hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
             "BDG rec", Strings::get().gravacaoParadaDisco);
+    });
+}
+
+void MainComponent::recordingSaveFailed(const juce::File& preservedChunkFolder)
+{
+    juce::MessageManager::callAsync([this, preservedChunkFolder]() {
+        isRecording = false;
+        inputPanel.setRecordingActive(false);
+        recordingPanel.stopRecording();
+        inlineWarning.hide();
+
+        analyticsReporter.trackEvent("error", [&]() {
+            auto extra = new juce::DynamicObject();
+            extra->setProperty("error_code", "concat_failed");
+            extra->setProperty("message", "Final file could not be written; chunks preserved");
+            return juce::var(extra);
+        }());
+
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+            "BDG rec", Strings::get().falhaSalvar);
+
+        // Point the user at the folder that still holds their audio.
+        preservedChunkFolder.revealToUser();
+    });
+}
+
+//==============================================================================
+// Analytics consent (first run)
+//==============================================================================
+void MainComponent::askAnalyticsConsentIfNeeded()
+{
+    if (analyticsReporter.hasAskedConsent())
+        return;
+
+    juce::MessageManager::callAsync([this]() {
+        auto opts = juce::MessageBoxOptions()
+                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                        .withTitle(Strings::get().consentTitulo)
+                        .withMessage(Strings::get().consentCorpo)
+                        .withButton(Strings::get().consentAceitar)   // index 0
+                        .withButton(Strings::get().consentRecusar);  // index 1
+
+        auto aliveFlag = uiAlive;
+        juce::AlertWindow::showAsync(opts, [this, aliveFlag](int result)
+        {
+            if (! aliveFlag->load())
+                return;
+
+            const bool allowed = (result == 0);
+            analyticsReporter.setConsent(allowed);
+
+            // Consent decides whether the session-open event is collected at
+            // all, so it is only recorded once the answer is known.
+            if (allowed)
+            {
+                updateAnalyticsContext();
+                analyticsReporter.trackEvent("app_open");
+            }
+        });
     });
 }
 
@@ -325,6 +396,7 @@ void MainComponent::handleRecordButtonClicked()
             DBG("Recording started successfully");
             isRecording = true;
             diskWarningShown = false;
+            inputPanel.setRecordingActive(true);
             recordingPanel.startRecording(folder);
         }
         else
@@ -339,6 +411,7 @@ void MainComponent::handleRecordButtonClicked()
         // Stop recording
         lastRecordedFile = audioEngine.stopRecording();
         isRecording = false;
+        inputPanel.setRecordingActive(false);
 
         // Track recording end
         {

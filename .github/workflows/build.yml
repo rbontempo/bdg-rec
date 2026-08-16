@@ -16,7 +16,7 @@ jobs:
       tag: ${{ steps.bump.outputs.tag }}
       skipped: ${{ steps.bump.outputs.skipped }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -57,19 +57,31 @@ jobs:
   build-macos:
     needs: version
     if: needs.version.outputs.skipped != 'true'
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.tag }}
           fetch-depth: 0
           submodules: recursive
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
       - name: Build
         run: cmake --build build --target BDG_REC --config Release
+
+      # The linker only ad-hoc signs the arm64 slice automatically. macOS 26
+      # (Tahoe) refuses to run code whose signature is missing or broken, so
+      # sign the whole bundle explicitly — both slices — before packaging.
+      - name: Ad-hoc codesign
+        run: |
+          APP="build/BDG_REC_artefacts/Release/BDG rec.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -111,7 +123,7 @@ jobs:
             "build/BDG_REC_artefacts/Release/BDG rec.app"
 
       - name: Upload macOS DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: BDG_REC_macOS
           path: dist/BDG_REC_macOS.dmg
@@ -119,9 +131,9 @@ jobs:
   build-windows:
     needs: version
     if: needs.version.outputs.skipped != 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.version.outputs.tag }}
           submodules: recursive
@@ -139,7 +151,7 @@ jobs:
         shell: cmd
 
       - name: Upload Windows EXE
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: BDG_REC_Windows
           path: dist/BDG_REC.exe
@@ -151,17 +163,17 @@ jobs:
       contents: write
     steps:
       - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: BDG_REC_macOS
 
       - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: BDG_REC_Windows
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           files: |

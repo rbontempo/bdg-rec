@@ -102,8 +102,19 @@ void InputPanel::setVolume(int value)
     repaint(); // update volume % label
 }
 
+void InputPanel::setRecordingActive(bool active)
+{
+    recordingActive = active;
+    deviceCombo.setEnabled(!active);
+    repaint();
+}
+
 void InputPanel::refreshDeviceList()
 {
+    // A hot-plug event must not hand the selector back to the user mid-take.
+    if (recordingActive)
+        return;
+
     const juce::String currentName = deviceCombo.getText();
 
     deviceCombo.clear(juce::dontSendNotification);

@@ -25,6 +25,10 @@ public:
         // Task 2: disk space monitoring
         virtual void diskSpaceWarning(int remainingMinutes) {}
         virtual void recordingAutoStopped() {}
+        // Concatenation failed (usually a full disk). The raw chunks were NOT
+        // deleted — they stay in this folder and the orphan-recovery flow can
+        // pick them up on the next launch.
+        virtual void recordingSaveFailed(const juce::File& preservedChunkFolder) {}
     };
 
     //==============================================================================
@@ -38,6 +42,11 @@ public:
     juce::StringArray getInputDevices();
     void setInputDevice(const juce::String& name);
     juce::String getCurrentInputDeviceName() const;
+
+    // Coarse device class ("builtin" / "usb" / "bluetooth" / "other" / "none").
+    // Device *names* routinely embed the owner's name ("AirPods do Renato"),
+    // so analytics reports this fixed vocabulary instead of the raw string.
+    juce::String getCurrentInputDeviceCategory() const;
 
     // Access device manager (for UI components)
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
@@ -139,8 +148,17 @@ private:
     // Prevent dangling this in callAsync lambdas
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);
 
+    // Result of merging the chunk files into the final WAV. `ok` is only true
+    // when every sample was written AND the finished file reads back at the
+    // expected length — callers must check it before deleting the chunks.
+    struct ConcatResult
+    {
+        juce::File file;
+        bool ok = false;
+    };
+
     bool openNextChunk();
-    juce::File concatenateChunks();
+    ConcatResult concatenateChunks();
 
     //==============================================================================
     // DSP background thread

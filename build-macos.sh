@@ -15,7 +15,8 @@ fi
 echo "[1/4] Configuring (universal binary arm64+x86_64)..."
 cmake -B build-release \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
 echo
 echo "[2/4] Building Release..."

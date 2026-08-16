@@ -31,6 +31,7 @@ public:
     void devicesChanged() override; // Task 19
     void diskSpaceWarning(int remainingMinutes) override; // Task 2
     void recordingAutoStopped() override; // Task 2
+    void recordingSaveFailed(const juce::File& preservedChunkFolder) override;
 
 private:
     BdgLookAndFeel bdgLookAndFeel;
@@ -56,6 +57,10 @@ private:
 
     void handleRecordButtonClicked();
     void updateAnalyticsContext();
+    void askAnalyticsConsentIfNeeded();
+
+    // Guards async dialog callbacks against a destroyed MainComponent.
+    std::shared_ptr<std::atomic<bool>> uiAlive = std::make_shared<std::atomic<bool>>(true);
 
     // Task 18 – persist / restore settings
     void saveSettings();

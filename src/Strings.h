@@ -33,6 +33,10 @@ struct StringTable
     juce::String areaRestrita, portalCliente, editePodcast;
     // OutputPanel
     juce::String selecionarPasta;
+    // Recording save failure (chunks preserved)
+    juce::String falhaSalvar;
+    // Analytics consent (first run)
+    juce::String consentTitulo, consentCorpo, consentAceitar, consentRecusar;
 };
 
 namespace Strings
@@ -104,6 +108,18 @@ namespace Strings
         "Edite seu podcast com o Bicho de Goiaba",
         // OutputPanel
         "Selecionar pasta de destino",
+        // Recording save failure
+        juce::CharPointer_UTF8 ("N\xc3\xa3" "o foi poss\xc3\xad" "vel salvar o arquivo final (disco cheio?). "
+                                "A grava\xc3\xa7\xc3\xa3" "o foi preservada e ser\xc3\xa1 recuperada na pr\xc3\xb3" "xima vez que abrir o app."),
+        // Analytics consent
+        juce::CharPointer_UTF8 ("Dados de uso"),
+        juce::CharPointer_UTF8 ("O BDG rec pode enviar dados an\xc3\xb4" "nimos de uso (sistema, vers\xc3\xa3" "o, "
+                                "tipo de microfone, dura\xc3\xa7\xc3\xa3" "o das grava\xc3\xa7\xc3\xb5" "es e erros) "
+                                "para ajudar a melhorar o app.\n\n"
+                                "Nenhum \xc3\xa1" "udio e nenhum dado pessoal s\xc3\xa3" "o enviados. "
+                                "Voc\xc3\xaa pode mudar de ideia a qualquer momento no menu."),
+        juce::CharPointer_UTF8 ("Permitir"),
+        juce::CharPointer_UTF8 ("N\xc3\xa3" "o enviar"),
     };
 
     // English table
@@ -158,6 +174,17 @@ namespace Strings
         "Edit your podcast with Bicho de Goiaba",
         // OutputPanel
         "Select destination folder",
+        // Recording save failure
+        "Could not save the final file (disk full?). Your recording was preserved "
+        "and will be recovered the next time you open the app.",
+        // Analytics consent
+        "Usage data",
+        "BDG rec can send anonymous usage data (system, version, microphone type, "
+        "recording length and errors) to help improve the app.\n\n"
+        "No audio and no personal data are sent. You can change your mind at any "
+        "time from the menu.",
+        "Allow",
+        "Don't send",
     };
 
     // Current language (default: Portuguese)
