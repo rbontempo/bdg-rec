@@ -39,6 +39,38 @@ target_link_libraries(BDG_UnitTests PRIVATE
 add_test(NAME unit.versions_and_strings COMMAND BDG_UnitTests)
 set_tests_properties(unit.versions_and_strings PROPERTIES LABELS "unit")
 
+# DSP runs on plain buffers, so it needs no device either.
+juce_add_console_app(BDG_DspTests PRODUCT_NAME "BDG_DspTests")
+
+target_sources(BDG_DspTests PRIVATE
+    DspTest.cpp
+    ${SRC_DIR}/Dsp.cpp
+)
+
+target_include_directories(BDG_DspTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/rnnoise/include
+)
+
+target_compile_definitions(BDG_DspTests PRIVATE
+    JUCE_STANDALONE_APPLICATION=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_APPLICATION_NAME_STRING="BDG_DspTests"
+    JUCE_APPLICATION_VERSION_STRING="1.0.0"
+)
+
+target_link_libraries(BDG_DspTests PRIVATE
+    rnnoise
+    juce::juce_core
+    juce::juce_audio_basics
+    juce::juce_audio_formats
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+)
+
+add_test(NAME unit.dsp COMMAND BDG_DspTests)
+set_tests_properties(unit.dsp PROPERTIES LABELS "unit" TIMEOUT 120)
+
 # ------------------------------------------------------------- device tests
 # Each of these records from the default input, so they need a machine with a
 # microphone and permission granted. RotationTest and the others shorten the

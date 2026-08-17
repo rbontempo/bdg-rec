@@ -44,7 +44,7 @@ public:
         const bool started = engine->startRecording(dest);
         check(started, "startRecording() succeeded");
 
-        if (! started) { quit(); return; }
+        if (! started) { setApplicationReturnValue(1); quit(); return; }
 
         // BDG_CHUNK_SECONDS is 2.0 for this build, so ~9s spans several rotations.
         startTimer(3000);
@@ -104,6 +104,7 @@ public:
 
         std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASS" : "FAILED",
                     failures, failures == 1 ? "" : "s");
+        setApplicationReturnValue(failures == 0 ? 0 : 1);
         quit();
     }
 

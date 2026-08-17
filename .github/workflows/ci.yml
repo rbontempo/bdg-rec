@@ -33,7 +33,7 @@ jobs:
             configure: cmake -B build -G "Visual Studio 17 2022" -A x64
 
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           submodules: recursive
 
@@ -41,7 +41,7 @@ jobs:
       # of the build. Keyed on CMakeLists.txt because that is where the JUCE
       # tag lives, so bumping it correctly invalidates the cache.
       - name: Cache fetched dependencies
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.0.0
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: build/_deps
           key: ${{ runner.os }}-deps-${{ hashFiles('CMakeLists.txt') }}
@@ -53,11 +53,17 @@ jobs:
       - name: Build
         run: cmake --build build --target BDG_REC --config Release
 
+      # Compile every test target, including the ones CI cannot run. Without
+      # this a change to AudioEngine's API would silently break the device
+      # tests and nobody would find out until someone built them by hand.
       - name: Build tests
-        run: cmake --build build --target BDG_UnitTests --config Release
+        run: >
+          cmake --build build --config Release
+          --target BDG_UnitTests BDG_DspTests
+          BDG_RotationTest BDG_SampleRateTest BDG_EmptyTakeTest
+          BDG_RecoveryTest BDG_DiskFullTest
 
-      # Only the `unit` label: the device tests capture from a real microphone,
-      # which a runner does not have. They still get compiled above on the
-      # developer's machine and run there.
+      # Only the `unit` label runs: the device tests capture from a real
+      # microphone, which a runner does not have.
       - name: Unit tests
         run: ctest --test-dir build -C Release -L unit --output-on-failure

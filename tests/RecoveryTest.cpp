@@ -76,7 +76,8 @@ public:
         // take the finished take apart into a chunk folder and blank the
         // header of the last chunk, exactly as a crash would leave it.
         auto finished = dest.findChildFiles(juce::File::findFiles, false, "BDG_rec_*.wav");
-        if (finished.isEmpty()) { check(false, "a recording was produced"); quit(); return; }
+        if (finished.isEmpty()) { check(false, "a recording was produced");
+                                 setApplicationReturnValue(1); quit(); return; }
 
         juce::AudioFormatManager fm; fm.registerBasicFormats();
         juce::int64 fullLength = 0;
@@ -130,6 +131,7 @@ public:
 
         std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASS" : "FAILED",
                     failures, failures == 1 ? "" : "s");
+        setApplicationReturnValue(failures == 0 ? 0 : 1);
         quit();
     }
 

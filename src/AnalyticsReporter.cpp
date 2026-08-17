@@ -56,9 +56,20 @@ void AnalyticsReporter::initialise(juce::ApplicationProperties& props, const juc
                 pf->saveIfNeeded();
             }
         }
+        else if (! consentAsked.load())
+        {
+            // Upgrading from a version that collected without asking: the id
+            // and the spooled events on disk predate any consent. Drop them
+            // now, so answering the prompt starts from nothing rather than
+            // shipping data gathered under the old regime (and under a second,
+            // now-orphaned identifier).
+            pf->removeValue("machineId");
+            pf->removeValue("pendingAnalytics");
+            pf->saveIfNeeded();
+        }
     }
 
-    if (enabled.load())
+    if (enabled.load() && consentAsked.load())
         loadPendingEvents();
 
     startThread(juce::Thread::Priority::low);
@@ -95,7 +106,7 @@ void AnalyticsReporter::setConsent(bool allowed)
                 // events, anything spooled to disk, and the identifier.
                 machineId.clear();
                 pf->removeValue("machineId");
-                pf->setValue("pendingAnalytics", "");
+                pf->removeValue("pendingAnalytics");
             }
 
             pf->saveIfNeeded();
@@ -199,6 +210,9 @@ void AnalyticsReporter::sendBatch()
     if (stream == nullptr)
     {
         juce::ScopedLock lock(queueLock);
+        // Re-check: the user may have opted out while this batch was in flight.
+        if (! enabled.load())
+            return;
         for (auto& evt : batch)
             eventQueue.add(evt);
         consecutiveFailures = juce::jmin(consecutiveFailures + 1, MAX_BACKOFF_SHIFT);
@@ -211,6 +225,8 @@ void AnalyticsReporter::sendBatch()
     if (!responseJson.getProperty("ok", false))
     {
         juce::ScopedLock lock(queueLock);
+        if (! enabled.load())
+            return;
         for (auto& evt : batch)
             eventQueue.add(evt);
         consecutiveFailures = juce::jmin(consecutiveFailures + 1, MAX_BACKOFF_SHIFT);

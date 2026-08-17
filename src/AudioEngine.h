@@ -204,12 +204,25 @@ private:
     };
 
     bool openNextChunk();
-    ConcatResult concatenateChunks();
+    // Everything the merge needs, captured at the moment the take stops.
+    // The merge runs on a background thread; reading the live members there
+    // let a device reopening mid-shutdown rewrite nativeSampleRate and stamp
+    // the final header with a rate the chunks were never recorded at.
+    struct SaveJob
+    {
+        juce::File  chunkFolder;
+        int         chunkIndex = 0;
+        double      sampleRate = 0.0;
+    };
 
-    // The two halves of stopping: finishWriting() is fast (closes the writer),
-    // finaliseSave() is the expensive merge.
+    ConcatResult concatenateChunks(const SaveJob& job);
+
+    // The two halves of stopping: finishWriting() is fast (closes the writer
+    // and snapshots the job), finaliseSave() is the expensive merge.
     bool finishWriting();
     juce::File finaliseSave();
+
+    SaveJob pendingSave;
 
     // Runs finaliseSave() off the message thread and reports back on it.
     class SaveThread : public juce::Thread

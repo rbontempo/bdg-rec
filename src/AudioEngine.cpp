@@ -30,7 +30,10 @@ AudioEngine::~AudioEngine()
 
     if (saveThread != nullptr)
     {
-        saveThread->stopThread(60000);
+        // -1 waits indefinitely. A forced kill would leave a half-written
+        // final file on disk, which the next launch's recovery would then
+        // append to.
+        saveThread->stopThread(-1);
         saveThread.reset();
     }
 
@@ -200,22 +203,26 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
         // old rate, and the concatenation copies raw samples without
         // resampling — every earlier chunk would come out at the wrong pitch
         // and duration. Salvage what we have instead of corrupting it.
-        if (recording.load()
-            && newRate != nativeSampleRate.load()
-            && ! deviceMismatch.exchange(true))
+        if (recording.load() && newRate != nativeSampleRate.load())
         {
-            auto aliveFlag = alive;
-            juce::MessageManager::callAsync([this, aliveFlag]()
+            // Only post the stop once, but return on EVERY reopen. Devices
+            // renegotiate in bursts, and the earlier version fell through to
+            // the store() below on the second one — writing the new rate into
+            // the very field the merge uses for the final header.
+            if (! deviceMismatch.exchange(true))
             {
-                if (! aliveFlag->load() || ! recording.load())
-                    return;
+                auto aliveFlag = alive;
+                juce::MessageManager::callAsync([this, aliveFlag]()
+                {
+                    if (! aliveFlag->load() || ! recording.load())
+                        return;
 
-                stopRecordingAsync(StopReason::DeviceRateChanged);
-            });
+                    stopRecordingAsync(StopReason::DeviceRateChanged);
+                });
+            }
 
-            // Leave nativeSampleRate alone: concatenateChunks() writes the
-            // final header with it, and it must stay at the rate the chunks
-            // on disk were actually recorded at.
+            // Leave nativeSampleRate alone: it must stay at the rate the
+            // chunks on disk were actually recorded at.
             return;
         }
 
@@ -409,6 +416,15 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
         return false;
     }
 
+    // The merge of the previous take reads chunkFolder/chunkIndex; starting a
+    // new one would repoint them under it, and its cleanup would delete the
+    // chunks being written right now.
+    if (saveThread != nullptr && saveThread->isThreadRunning())
+    {
+        DBG("  Previous take is still being saved, returning false");
+        return false;
+    }
+
     // Make sure destination folder exists
     if (!destFolder.isDirectory())
         destFolder.createDirectory();
@@ -531,13 +547,19 @@ bool AudioEngine::openNextChunk()
     return true;
 }
 
-AudioEngine::ConcatResult AudioEngine::concatenateChunks()
+AudioEngine::ConcatResult AudioEngine::concatenateChunks(const SaveJob& job)
 {
     ConcatResult result;
 
-    juce::File finalFile = chunkFolder.getParentDirectory().getChildFile(
-        chunkFolder.getFileName() + ".wav");
+    juce::File finalFile = job.chunkFolder.getParentDirectory().getChildFile(
+        job.chunkFolder.getFileName() + ".wav");
     result.file = finalFile;
+
+    // FileOutputStream opens an existing file positioned at the END, and the
+    // WAV writer stamps its header wherever the stream currently is. A partial
+    // file left by a killed merge would therefore get the new take appended
+    // after it, behind a stale header.
+    finalFile.deleteFile();
 
     auto outStream = std::unique_ptr<juce::FileOutputStream>(
         finalFile.createOutputStream());
@@ -550,7 +572,7 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks()
 
     auto* finalWriter = wavFormat.createWriterFor(
         outStream.get(),
-        nativeSampleRate.load(),
+        job.sampleRate,
         1,    // mono
         24,   // bit depth
         {},   // metadata
@@ -573,9 +595,9 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks()
     bool allWritesSucceeded = true;
     int  chunksSkipped = 0;
 
-    for (int i = 1; i <= chunkIndex; ++i)
+    for (int i = 1; i <= job.chunkIndex; ++i)
     {
-        juce::File chunkFile = chunkFolder.getChildFile(
+        juce::File chunkFile = job.chunkFolder.getChildFile(
             juce::String::formatted("chunk_%03d.wav", i));
 
         std::unique_ptr<juce::AudioFormatReader> reader(
@@ -685,16 +707,24 @@ bool AudioEngine::finishWriting()
         DBG("  finishWriting: WARNING " + juce::String(droppedSamples.load())
             + " samples were dropped by the write path");
 
+    // Freeze everything the merge needs. From here on the device may reopen,
+    // the user may start another take — none of it can reach the job in
+    // flight.
+    pendingSave.chunkFolder = chunkFolder;
+    pendingSave.chunkIndex  = chunkIndex;
+    pendingSave.sampleRate  = nativeSampleRate.load();
+
     return true;
 }
 
 juce::File AudioEngine::finaliseSave()
 {
-    auto result = concatenateChunks();
+    const SaveJob job = pendingSave;
+    auto result = concatenateChunks(job);
 
     if (result.ok)
     {
-        chunkFolder.deleteRecursively();
+        job.chunkFolder.deleteRecursively();
         return result.file;
     }
 
@@ -702,10 +732,10 @@ juce::File AudioEngine::finaliseSave()
     // the only intact copy of the audio, so they stay put; findOrphanedRecordings
     // picks them up next launch. Drop the truncated output so it can't be
     // mistaken for a finished recording.
-    DBG("  finaliseSave: concat failed, PRESERVING chunks at " + chunkFolder.getFullPathName());
+    DBG("  finaliseSave: concat failed, PRESERVING chunks at " + job.chunkFolder.getFullPathName());
     result.file.deleteFile();
 
-    auto folder = chunkFolder;
+    auto folder = job.chunkFolder;
     auto aliveFlag = alive;
     juce::MessageManager::callAsync([this, aliveFlag, folder]()
     {
@@ -842,9 +872,11 @@ namespace
             const int size = stream.readInt();
             const juce::int64 payload = stream.getPosition();
 
-            if (id == (int) juce::ByteOrder::littleEndianInt("fmt "))
+            if (id == (int) juce::ByteOrder::littleEndianInt("fmt ") && size >= 16)
             {
                 // audioFormat(2) numChannels(2) sampleRate(4) ...
+                // The size check matters: on a malformed file those bytes
+                // would be the next chunk's header read as a sample rate.
                 stream.setPosition(payload + 4);
                 info.sampleRate = (double) (juce::uint32) stream.readInt();
             }
@@ -989,6 +1021,11 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
     juce::File finalFile = orphanedChunkFolder.getParentDirectory().getChildFile(
         orphanedChunkFolder.getFileName() + ".wav");
 
+    // A killed merge can leave a partial file with exactly this name. Opening
+    // it would append behind a stale header — and since the chunks get deleted
+    // on success, that would destroy the take it is meant to rescue.
+    finalFile.deleteFile();
+
     auto outStream = std::unique_ptr<juce::FileOutputStream>(
         finalFile.createOutputStream());
 
@@ -1074,7 +1111,21 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
 
     // Same rule as stopRecording(): the chunks are the only intact copy, so
     // they are not deleted until the recovered file is known to be good.
-    if (writeFailed || recoveredSamples == 0)
+    // `delete finalWriter` above returns void and can fail silently on a full
+    // disk, so a successful-looking write is not enough — read it back.
+    bool verified = false;
+    if (! writeFailed && recoveredSamples > 0)
+    {
+        std::unique_ptr<juce::AudioFormatReader> check(
+            formatManager.createReaderFor(finalFile));
+
+        verified = (check != nullptr && check->lengthInSamples == recoveredSamples);
+
+        if (! verified)
+            DBG("recoverRecording: verification FAILED on the recovered file");
+    }
+
+    if (! verified)
     {
         DBG("recoverRecording: FAILED — keeping chunks at "
             + orphanedChunkFolder.getFullPathName());

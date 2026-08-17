@@ -254,18 +254,9 @@ void MainComponent::devicesChanged()
     // Refresh the input device ComboBox
     inputPanel.refreshDeviceList();
 
-    // A disconnect during recording is now stopped and reported by the engine
-    // through recordingStoppedDeviceChanged (which also carries the salvaged
-    // file); only the analytics breadcrumb belongs here.
-    if (isRecording && audioEngine.getCurrentInputDeviceName().isEmpty())
-    {
-        analyticsReporter.trackEvent("error", [&]() {
-            auto extra = new juce::DynamicObject();
-            extra->setProperty("error_code", "device_lost");
-            extra->setProperty("message", "Device disconnected during recording");
-            return juce::var(extra);
-        }());
-    }
+    // A disconnect during recording is stopped and reported by the engine
+    // through recordingFinished(StopReason::DeviceLost), which also logs the
+    // analytics event and carries the salvaged file — nothing to do here.
 }
 
 //==============================================================================
