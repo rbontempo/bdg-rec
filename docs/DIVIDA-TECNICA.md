@@ -101,9 +101,12 @@ o uso real mostrou o contrário:
 
 - **`InlineWarning` com countdown residual** — era "cosmético" até derrubar o
   aviso de amostras perdidas, que precisa ficar na tela.
-- **Permissão da pasta pedida 4× no startup** — não estava nesta lista porque
-  nenhuma auditoria de leitura o encontrou. Só apareceu abrindo o app com o
-  TCC limpo.
+- **Permissão pedida várias vezes no startup**, para a pasta e para o
+  microfone — não estava nesta lista porque nenhuma auditoria de leitura o
+  encontrou. Só apareceu abrindo o app com o TCC limpo. A pasta era sondada
+  em quatro pontos independentes; o microfone, em três (o `InputPanel` chegava
+  a enumerar dispositivos antes de o engine existir). Medido com contadores:
+  microfone foi de 3 acessos para 1.
 - **Waveform em escala linear** e **`0` da régua cortado** — mesma causa raiz
   (amplitude linear onde precisava ser dB), em dois lugares. A escala agora
   vive em `src/LevelScale.h`, compartilhada, e há teste de render que reprova

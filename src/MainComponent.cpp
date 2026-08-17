@@ -28,6 +28,11 @@ MainComponent::MainComponent()
     audioEngine.initialise();
     audioEngine.addListener(this);
 
+    // Now that the engine has opened the device (and the microphone prompt,
+    // if any, has been answered), populate the selector — a single
+    // enumeration instead of one per constructor and per settings load.
+    inputPanel.refreshDeviceList();
+
     if (auto* dev = audioEngine.getDeviceManager().getCurrentAudioDevice())
         outputPanel.setSampleRate((int)dev->getCurrentSampleRate());
 
@@ -131,17 +136,26 @@ void MainComponent::openDestFolderOnce()
     if (savedDestFolder == juce::File())
         return;   // never configured: nothing to probe, no prompt on first run
 
-    // One probe. If it is refused, the folder simply stays unconfigured and
-    // the user picks one from the UI — which goes through the file chooser and
-    // grants access without a TCC prompt.
+    // Exactly one probe. If it is refused, the folder stays unconfigured and
+    // the user picks one from the UI — the file chooser grants access without
+    // a TCC prompt.
     if (! savedDestFolder.isDirectory())
         return;
 
     outputPanel.setDestFolder(savedDestFolder);
 
-    // From here on the grant is in place, so the remaining reads are free.
-    recordingPanel.setDestFolder(savedDestFolder);
-    promptForOrphans(audioEngine.findOrphanedRecordings(savedDestFolder), 0);
+    // The remaining reads (free space, orphan scan) wait for the next turn of
+    // the message loop, so the answer to the prompt above is already recorded
+    // and they cannot each raise one of their own.
+    auto aliveFlag = uiAlive;
+    auto folder = savedDestFolder;
+    juce::MessageManager::callAsync([this, aliveFlag, folder]()
+    {
+        if (! aliveFlag->load()) return;
+
+        recordingPanel.setDestFolder(folder);
+        promptForOrphans(audioEngine.findOrphanedRecordings(folder), 0);
+    });
 }
 
 //==============================================================================

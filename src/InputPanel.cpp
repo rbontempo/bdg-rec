@@ -5,18 +5,11 @@
 InputPanel::InputPanel(AudioEngine& engine)
     : audioEngine(engine)
 {
-    // ---- Device ComboBox ----
-    auto devices = audioEngine.getInputDevices();
-    for (int i = 0; i < devices.size(); ++i)
-        deviceCombo.addItem(devices[i], i + 1);
-
-    // Pre-select the currently active device if known
-    {
-        juce::String currentName = audioEngine.getCurrentInputDeviceName();
-        int idx = devices.indexOf(currentName);
-        if (idx >= 0)
-            deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
-    }
+    // Deliberately NOT enumerating devices here. This panel is a member of
+    // MainComponent, so its constructor runs before the constructor body —
+    // before audioEngine.initialise(). Scanning at that point asks macOS for
+    // microphone access from a second place, which is one extra permission
+    // window. MainComponent calls refreshDeviceList() once the engine is up.
 
     deviceCombo.onChange = [this]()
     {

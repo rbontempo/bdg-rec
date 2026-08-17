@@ -63,20 +63,36 @@ void AudioEngine::initialise()
     startTimer(kTimerIntervalMs);
 
     if (auto* dev = deviceManager.getCurrentAudioDevice())
+    {
+        // initialiseWithDefaultDevices already enumerated on its way to
+        // opening this device, so the first getInputDevices() must not scan
+        // again — that second scan was a second microphone prompt.
+        needsDeviceRescan = false;
         DBG("AudioEngine::initialise OK: " + dev->getName());
+    }
     else
+    {
         DBG("AudioEngine::initialise: no device opened by default");
+    }
 }
 
 //==============================================================================
 juce::StringArray AudioEngine::getInputDevices()
 {
+    if (! cachedInputDevices.isEmpty())
+        return cachedInputDevices;
+
     juce::StringArray names;
 
-    // Try current device type first
+    // Scan only when something actually changed. A device is already open at
+    // this point (initialise() enumerated on the way), so rescanning would
+    // just be a second permission request for the same list.
+    const bool rescan = needsDeviceRescan || deviceManager.getCurrentAudioDevice() == nullptr;
+
     if (auto* type = deviceManager.getCurrentDeviceTypeObject())
     {
-        type->scanForDevices();
+        if (rescan)
+            type->scanForDevices();
         names = type->getDeviceNames(true);
     }
 
@@ -85,12 +101,15 @@ juce::StringArray AudioEngine::getInputDevices()
     {
         for (auto* type : deviceManager.getAvailableDeviceTypes())
         {
-            type->scanForDevices();
+            if (rescan)
+                type->scanForDevices();
             auto devNames = type->getDeviceNames(true);
             names.addArray(devNames);
         }
     }
 
+    cachedInputDevices = names;
+    needsDeviceRescan = false;
     return names;
 }
 
@@ -405,6 +424,11 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
     // than stacking a second dialog on top.
     if (recording.load() && deviceManager.getCurrentAudioDevice() == nullptr)
         stopRecordingAsync(StopReason::DeviceLost);
+
+    // The device set really did change, so this is the one moment a rescan
+    // is warranted.
+    cachedInputDevices.clear();
+    needsDeviceRescan = true;
 
     // Notify all listeners so UI can refresh device list
     listeners.call(&Listener::devicesChanged);

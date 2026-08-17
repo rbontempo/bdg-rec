@@ -51,6 +51,10 @@ public:
     void initialise();
 
     // Device enumeration / selection
+    // Enumerating audio inputs asks macOS for microphone access, so the
+    // result is cached: the app used to rescan on every call, and each scan
+    // was another permission window in the user's face. Hot-plug invalidates
+    // it, which is the only moment a rescan is actually needed.
     juce::StringArray getInputDevices();
     void setInputDevice(const juce::String& name);
     juce::String getCurrentInputDeviceName() const;
@@ -147,6 +151,12 @@ private:
     std::atomic<bool>  monitorEnabled{false};
 
     juce::ListenerList<Listener> listeners;
+
+    juce::StringArray cachedInputDevices;
+    // Set by hot-plug. Without it the app rescanned even right after
+    // initialiseWithDefaultDevices(), which had just enumerated everything —
+    // a second microphone permission request for no new information.
+    bool needsDeviceRescan{true};
 
     //==============================================================================
     // Recording members
