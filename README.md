@@ -44,6 +44,22 @@ build-windows.bat
 ```
 Output: `dist\BDG_REC_<version>_Windows\BDG rec.exe`
 
+## Repository layout
+
+```
+src/     aplicativo desktop (C++/JUCE)
+tests/   suite de testes (ctest, opt-in via -DBDG_BUILD_TESTS=ON)
+site/    rec.bdg.fm — site e a API de telemetria (PHP)
+docs/    contrato da telemetria e divida tecnica
+```
+
+O site vive aqui desde agosto/2026, com o histórico dele preservado. Os
+workflows são filtrados por caminho: mexer em `site/` não gera release do app,
+e mexer no app não roda o check do site.
+
+O deploy do site continua manual (`site/deploy.sh`, SSH para o SiteGround) —
+as credenciais não estão no repositório.
+
 ## Tech Stack
 
 - C++17

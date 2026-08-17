@@ -1,0 +1,47 @@
+name: Site
+
+# Only the site. Deployment is deliberately NOT here: deploy.sh pushes over
+# SSH to SiteGround with credentials that are not in this repository, so it
+# stays a manual step. What CI can do is catch a broken file before it is
+# copied to production by hand.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'site/**'
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.2'
+
+      # A syntax error in an api/*.php file takes the analytics endpoint down
+      # the moment it is uploaded, and the app fails silently when that
+      # happens — it just queues events forever.
+      - name: PHP syntax check
+        run: |
+          fail=0
+          for f in $(find site -name '*.php'); do
+            php -l "$f" || fail=1
+          done
+          exit $fail
+
+      - name: SQL files are readable
+        run: |
+          for f in $(find site -name '*.sql'); do
+            test -s "$f" || { echo "empty: $f"; exit 1; }
+          done

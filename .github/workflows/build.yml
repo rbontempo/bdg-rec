@@ -3,6 +3,13 @@ name: Build BDG rec
 on:
   push:
     branches: [main]
+    # The site and the docs live in this repo too. Without this filter, fixing
+    # a typo in site/index.html would bump the app version, cut a tag and
+    # publish a release of unchanged binaries.
+    paths-ignore:
+      - 'site/**'
+      - 'docs/**'
+      - '**/*.md'
 
 # Two pushes landing close together would otherwise run two version jobs that
 # read the same version, compute the same tag, and race on the push.
