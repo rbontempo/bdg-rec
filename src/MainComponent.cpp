@@ -56,14 +56,7 @@ MainComponent::MainComponent()
     recordingPanel.onRecordClicked = [this]() { handleRecordButtonClicked(); };
 
     // Wire up language switcher
-    headerBar.onLanguageChanged = [this]()
-    {
-        inputPanel.repaint();
-        recordingPanel.repaint();
-        outputPanel.updateLanguage();
-        menuItemsChanged();
-        saveSettings();
-    };
+    headerBar.onLanguageChanged = [this]() { applyLanguageChange(); };
 
     // Task 18 – save on every settings change
     inputPanel.onSettingsChanged  = [this]() { saveSettings(); updateAnalyticsContext(); };
@@ -156,6 +149,25 @@ MainComponent::~MainComponent()
 
     // Flush settings to disk
     appProperties.closeFiles();
+}
+
+//==============================================================================
+// Language
+//==============================================================================
+void MainComponent::applyLanguageChange()
+{
+    // One place for every widget that has to be told. The header button and
+    // the menu item used to do this separately and had already drifted apart,
+    // and neither refreshed InputPanel's buttons or the DSP step names —
+    // repaint() does not change the text of a TextButton.
+    headerBar.repaint();
+    inputPanel.updateLanguage();
+    recordingPanel.repaint();
+    outputPanel.updateLanguage();
+    dspOverlay.updateLanguage();
+    menuItemsChanged();
+    updateAnalyticsContext();   // locale is part of the analytics context
+    saveSettings();
 }
 
 //==============================================================================
@@ -731,21 +743,11 @@ void MainComponent::menuItemSelected(int menuItemID, int)
             break;
         case idLangPT:
             Strings::setLanguage(Language::PT);
-            menuItemsChanged();
-            headerBar.repaint();
-            inputPanel.repaint();
-            recordingPanel.repaint();
-            outputPanel.updateLanguage();
-            saveSettings();
+            applyLanguageChange();
             break;
         case idLangEN:
             Strings::setLanguage(Language::EN);
-            menuItemsChanged();
-            headerBar.repaint();
-            inputPanel.repaint();
-            recordingPanel.repaint();
-            outputPanel.updateLanguage();
-            saveSettings();
+            applyLanguageChange();
             break;
         case idQuit:
             juce::JUCEApplication::getInstance()->systemRequestedQuit();

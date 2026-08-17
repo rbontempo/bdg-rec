@@ -107,6 +107,14 @@ void InputPanel::setVolume(int value)
     repaint(); // update volume % label
 }
 
+void InputPanel::updateLanguage()
+{
+    toggleBtn.setButtonText(Strings::get().areaRestrita);
+    portalBtn.setButtonText(Strings::get().portalCliente);
+    editBtn.setButtonText(Strings::get().editePodcast);
+    repaint();
+}
+
 void InputPanel::setRecordingActive(bool active)
 {
     recordingActive = active;

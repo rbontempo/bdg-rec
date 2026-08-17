@@ -34,6 +34,11 @@ public:
     // silently corrupts the pitch and duration of everything recorded so far.
     void setRecordingActive(bool active);
 
+    // The three buttons below take their text from Strings at construction
+    // time, and repaint() does not change a TextButton's label — so switching
+    // language left them in the old one.
+    void updateLanguage();
+
     // Callbacks for settings changes (Task 18)
     std::function<void()> onSettingsChanged;
 

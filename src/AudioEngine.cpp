@@ -790,12 +790,69 @@ juce::Array<juce::File> AudioEngine::findOrphanedRecordings(const juce::File& de
 
 namespace
 {
+    struct RawWavInfo
+    {
+        juce::int64 dataOffset = 0;
+        double      sampleRate = 0.0;
+        bool        ok = false;
+    };
+
+    // Walks the RIFF chunks by hand. Needed because a chunk left behind by a
+    // crash has a header the normal reader will not touch, yet the `fmt ` and
+    // `data` chunks themselves are perfectly intact.
+    RawWavInfo readWavLayout(juce::InputStream& stream, juce::int64 fileSize)
+    {
+        RawWavInfo info;
+
+        if (stream.readInt() != (int) juce::ByteOrder::littleEndianInt("RIFF"))
+            return info;
+        stream.readInt(); // riff size (unreliable on a truncated file)
+        if (stream.readInt() != (int) juce::ByteOrder::littleEndianInt("WAVE"))
+            return info;
+
+        while (! stream.isExhausted() && stream.getPosition() + 8 <= fileSize)
+        {
+            const int id   = stream.readInt();
+            const int size = stream.readInt();
+            const juce::int64 payload = stream.getPosition();
+
+            if (id == (int) juce::ByteOrder::littleEndianInt("fmt "))
+            {
+                // audioFormat(2) numChannels(2) sampleRate(4) ...
+                stream.setPosition(payload + 4);
+                info.sampleRate = (double) (juce::uint32) stream.readInt();
+            }
+            else if (id == (int) juce::ByteOrder::littleEndianInt("data"))
+            {
+                info.dataOffset = payload;
+                info.ok = info.sampleRate > 0.0;
+                return info;
+            }
+
+            if (size < 0)
+                return info;
+
+            stream.setPosition(payload + size + (size & 1)); // chunks are word-aligned
+        }
+
+        return info;
+    }
+
+    // Reads the sample rate of a chunk whose header the WAV reader rejects.
+    double readRawSampleRate(const juce::File& chunkFile)
+    {
+        auto stream = std::unique_ptr<juce::FileInputStream>(chunkFile.createInputStream());
+        if (stream == nullptr || ! stream->openedOk())
+            return 0.0;
+
+        return readWavLayout(*stream, stream->getTotalLength()).sampleRate;
+    }
+
     // A WAV writer only backfills the real length into the header when it is
     // closed. After a crash the chunk that was being recorded still holds all
-    // its PCM, but the header claims zero samples — createReaderFor() succeeds
-    // and reports length 0, so the normal copy path silently drops it. This
-    // walks the RIFF chunks, finds the `data` payload, and derives the sample
-    // count from the bytes actually on disk.
+    // its PCM, but the header claims zero samples, so the normal copy path
+    // silently drops it. This derives the sample count from the bytes that are
+    // actually on disk.
     juce::int64 salvageTruncatedChunk(const juce::File& chunkFile,
                                       juce::AudioFormatWriter* writer)
     {
@@ -807,30 +864,8 @@ namespace
         if (fileSize <= 44)
             return 0;
 
-        // RIFF....WAVE, then a sequence of <id><size><payload> chunks.
-        if (stream->readInt() != (int) juce::ByteOrder::littleEndianInt("RIFF"))
-            return 0;
-        stream->readInt(); // riff size (unreliable on a truncated file)
-        if (stream->readInt() != (int) juce::ByteOrder::littleEndianInt("WAVE"))
-            return 0;
-
-        juce::int64 dataOffset = 0;
-        while (! stream->isExhausted() && stream->getPosition() + 8 <= fileSize)
-        {
-            const int id   = stream->readInt();
-            const int size = stream->readInt();
-
-            if (id == (int) juce::ByteOrder::littleEndianInt("data"))
-            {
-                dataOffset = stream->getPosition();
-                break;
-            }
-
-            if (size < 0)
-                return 0;
-
-            stream->setPosition(stream->getPosition() + size + (size & 1)); // chunks are word-aligned
-        }
+        const auto info = readWavLayout(*stream, fileSize);
+        const juce::int64 dataOffset = info.dataOffset;
 
         if (dataOffset <= 0 || dataOffset >= fileSize)
             return 0;
@@ -895,8 +930,25 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
         {
             std::unique_ptr<juce::AudioFormatReader> reader(
                 formatManager.createReaderFor(chunkFile));
-            if (reader != nullptr)
+
+            if (reader != nullptr && reader->sampleRate > 0.0)
+            {
                 detectedSampleRate = reader->sampleRate;
+            }
+            else
+            {
+                // Single-chunk crash: the reader refuses this file, but the
+                // `fmt ` chunk is intact. Falling back to a hardcoded 44100
+                // here would relabel a 48 kHz take and shift its pitch — the
+                // exact corruption the device-change guard exists to prevent.
+                reader.reset();
+                const double raw = readRawSampleRate(chunkFile);
+                if (raw > 0.0)
+                    detectedSampleRate = raw;
+                else
+                    DBG("recoverRecording: could not determine sample rate, assuming "
+                        + juce::String(detectedSampleRate));
+            }
         }
         detectedChunkCount++;
     }

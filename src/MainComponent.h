@@ -58,6 +58,7 @@ private:
 
     void handleRecordButtonClicked();
     void updateAnalyticsContext();
+    void applyLanguageChange();
     void askAnalyticsConsentIfNeeded();
 
     // Guards async dialog callbacks against a destroyed MainComponent.
