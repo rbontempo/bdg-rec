@@ -13,6 +13,10 @@ AudioEngine::AudioEngine() = default;
 
 AudioEngine::~AudioEngine()
 {
+    // First: the timer touches listeners and chunk state, and ~Timer would
+    // otherwise only run after those members are gone.
+    stopTimer();
+
     // Mark as dead so pending callAsync lambdas bail out
     alive->store(false);
 
@@ -246,7 +250,6 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
             + " ch=" + juce::String(nativeChannels.load()));
     }
 
-    lastUpdateMs.store(0);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -388,15 +391,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 }
 
 //==============================================================================
-// AsyncUpdater
-//==============================================================================
-void AudioEngine::handleAsyncUpdate()
-{
-    // Kept only to satisfy the AsyncUpdater base; levels now come from the
-    // timer so nothing is posted from the audio thread.
-}
-
-//==============================================================================
 // ChangeListener – device hot-plug (Task 19)
 //==============================================================================
 void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
@@ -427,6 +421,9 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
         DBG("  Already recording, returning false");
         return false;
     }
+
+    // Rotation and disk polling ride on the timer started in initialise().
+    jassert(isTimerRunning());
 
     // The merge of the previous take reads chunkFolder/chunkIndex; starting a
     // new one would repoint them under it, and its cleanup would delete the

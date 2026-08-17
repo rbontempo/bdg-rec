@@ -61,6 +61,11 @@ void RecordingPanel::setDestFolder(const juce::File& folder)
 
 void RecordingPanel::stopRecording()
 {
+    // One last read: the label only refreshes once a second, so without this
+    // the reported duration could be up to ~2 s short.
+    if (isRecording)
+        elapsedSecs = (int) ((juce::Time::getMillisecondCounterHiRes() - startMs) / 1000.0);
+
     isRecording = false;
     waveformDisplay.setRecording(false);
     recordButton.setRecordingState(false);

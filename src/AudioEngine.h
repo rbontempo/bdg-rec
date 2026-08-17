@@ -5,7 +5,6 @@
 #include <memory>
 
 class AudioEngine : public juce::AudioIODeviceCallback,
-                    public juce::AsyncUpdater,
                     public juce::ChangeListener,
                     public juce::Timer
 {
@@ -99,9 +98,11 @@ public:
     // stalls). Zero on a healthy recording.
     juce::int64 getDroppedSamples() const { return droppedSamples.load(); }
 
-    // Rate the last take was recorded at, for turning dropped samples into
-    // seconds after the fact.
-    double getLastSampleRate() const { return nativeSampleRate.load(); }
+    // Rate the last take was actually recorded at. Comes from the snapshot
+    // taken when the take stopped — reading the live nativeSampleRate here
+    // would report whatever the device renegotiated to in the meantime,
+    // which is the very thing the snapshot exists to avoid.
+    double getTakeSampleRate() const { return pendingSave.sampleRate; }
 
     //==============================================================================
     // DSP processing (runs on background thread)
@@ -122,10 +123,6 @@ public:
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
-
-    //==============================================================================
-    // AsyncUpdater
-    void handleAsyncUpdate() override;
 
     //==============================================================================
     // ChangeListener – receives device-manager change notifications (Task 19)
@@ -150,9 +147,6 @@ private:
     std::atomic<bool>  monitorEnabled{false};
 
     juce::ListenerList<Listener> listeners;
-
-    // Throttle: fire update at most every 50 ms
-    std::atomic<juce::int64> lastUpdateMs{0};
 
     //==============================================================================
     // Recording members

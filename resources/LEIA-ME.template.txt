@@ -43,6 +43,11 @@ Versao $VERSION — Novidades
 
 $CHANGES
 
+Atencao a quem usa interface de audio com apenas um canal ativo:
+o nivel de gravacao estava saindo 6 dB abaixo do que os medidores
+mostravam, e isso foi corrigido. Se voce compensava aumentando o
+volume de entrada, confira o nivel antes da proxima gravacao.
+
 
 Sobre
 =====

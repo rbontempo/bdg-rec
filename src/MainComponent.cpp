@@ -124,6 +124,27 @@ MainComponent::~MainComponent()
     appProperties.closeFiles();
 }
 
+void MainComponent::showTakeResult(const juce::File& file)
+{
+    const juce::String saved =
+        Strings::get().salvoNaPasta + file.getParentDirectory().getFileName();
+
+    if (lastTakeDropped <= 0)
+    {
+        inlineWarning.show(saved, InlineWarning::Info);
+        return;
+    }
+
+    // Losing audio outranks the good news, so the two go out together and the
+    // message stays on screen until dismissed.
+    const double lostSecs = (double) lastTakeDropped / juce::jmax(1.0, lastTakeRate);
+
+    inlineWarning.show(
+        saved + "  —  "
+        + Strings::get().amostrasPerdidas.replace("%S", juce::String(lostSecs, 1)),
+        InlineWarning::Warning, 0);
+}
+
 //==============================================================================
 // Crash recovery
 //==============================================================================
@@ -366,21 +387,18 @@ void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopR
         lastRecordedFile = file;
 
         // The engine counts what the write path could not accept when the disk
-        // stalled. Silently handing over a take with holes in it is exactly the
-        // kind of thing this audit was about.
-        const auto dropped = audioEngine.getDroppedSamples();
-        if (dropped > 0)
-        {
-            const double lostSecs = (double) dropped
-                                  / juce::jmax(1.0, audioEngine.getLastSampleRate());
-            inlineWarning.show(
-                Strings::get().amostrasPerdidas.replace("%S", juce::String(lostSecs, 1)),
-                InlineWarning::Warning, 0);
+        // stalled. Remembered rather than shown here: this function goes on to
+        // announce the save, and InlineWarning has a single slot — showing the
+        // warning now would just be overwritten a few lines below.
+        lastTakeDropped = audioEngine.getDroppedSamples();
+        lastTakeRate    = audioEngine.getTakeSampleRate();
 
+        if (lastTakeDropped > 0)
+        {
             analyticsReporter.trackEvent("error", [&]() {
                 auto extra = new juce::DynamicObject();
                 extra->setProperty("error_code", "samples_dropped");
-                extra->setProperty("message", juce::String(dropped) + " samples dropped");
+                extra->setProperty("message", juce::String(lastTakeDropped) + " samples dropped");
                 return juce::var(extra);
             }());
         }
@@ -409,9 +427,7 @@ void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopR
         }
         else
         {
-            inlineWarning.show(
-                Strings::get().salvoNaPasta + file.getParentDirectory().getFileName(),
-                InlineWarning::Info);
+            showTakeResult(file);
             file.revealToUser();
 
             analyticsReporter.trackEvent("export_complete", [&]() {
@@ -568,8 +584,7 @@ void MainComponent::dspFinished(const juce::File& file)
     juce::MessageManager::callAsync([this, file]()
     {
         dspOverlay.hide();
-        inlineWarning.show(
-            Strings::get().salvoNaPasta + file.getParentDirectory().getFileName(), InlineWarning::Info);
+        showTakeResult(file);
         file.revealToUser();
 
         // Track DSP applied

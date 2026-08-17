@@ -52,6 +52,10 @@ private:
 
     // Recording state
     juce::File     lastRecordedFile;
+    // Carried from the stop to whichever notification lands last, so the
+    // "samples were lost" warning is not overwritten by "saved in folder".
+    juce::int64    lastTakeDropped = 0;
+    double         lastTakeRate = 0.0;
     bool           isRecording = false;
     bool           diskWarningShown = false;
 
@@ -63,6 +67,10 @@ private:
     // Walks the orphan list one dialog at a time. Only the first was ever
     // offered, so after two crashes the second take needed another relaunch.
     void promptForOrphans(juce::Array<juce::File> orphans, int index);
+
+    // One notification for the end of a take: plain "saved" when all went
+    // well, or a persistent warning that also mentions the lost audio.
+    void showTakeResult(const juce::File& file);
 
     // Guards async dialog callbacks against a destroyed MainComponent.
     std::shared_ptr<std::atomic<bool>> uiAlive = std::make_shared<std::atomic<bool>>(true);

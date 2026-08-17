@@ -40,6 +40,14 @@ está inconsistente com os sites que *receberam* o guard.
 **Quando vira bug:** no dia em que o app tiver mais de uma janela, ou em
 qualquer refactor que permita destruir o `MainComponent` com o loop vivo.
 
+### `contributing == 0` retorna sem contabilizar
+`AudioEngine.cpp`
+
+Se todos os ponteiros de entrada vierem nulos, o bloco retorna sem somar nada
+a `droppedSamples`. Deliberado: contar como "perdido" dispararia o aviso de
+"o disco não acompanhou", que seria mentira. Na prática o CoreAudio não
+entrega um callback assim.
+
 ### `Strings::currentLanguage` é estado global mutável em header
 `Strings.h`
 
