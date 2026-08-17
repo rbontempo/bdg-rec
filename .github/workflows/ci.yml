@@ -48,7 +48,16 @@ jobs:
           restore-keys: ${{ runner.os }}-deps-
 
       - name: Configure
-        run: ${{ matrix.configure }}
+        run: ${{ matrix.configure }} -DBDG_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build --target BDG_REC --config Release
+
+      - name: Build tests
+        run: cmake --build build --target BDG_UnitTests --config Release
+
+      # Only the `unit` label: the device tests capture from a real microphone,
+      # which a runner does not have. They still get compiled above on the
+      # developer's machine and run there.
+      - name: Unit tests
+        run: ctest --test-dir build -C Release -L unit --output-on-failure

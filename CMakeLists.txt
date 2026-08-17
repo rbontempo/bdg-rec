@@ -120,3 +120,11 @@ if(APPLE)
         COMMENT "Copying app icon"
     )
 endif()
+
+# ---- Tests (opt-in) ----
+# cmake -B build -DBDG_BUILD_TESTS=ON && cmake --build build && ctest --test-dir build -L unit
+option(BDG_BUILD_TESTS "Build the test suite" OFF)
+if(BDG_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

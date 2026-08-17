@@ -18,6 +18,10 @@ public:
     /// Manual check triggered from menu — bypasses 7-day interval.
     void forceCheck(std::function<void(juce::String)> onUpdateAvailable = {});
 
+    // Pure comparison of two dotted version strings — public so it can be
+    // unit tested without any network or UI.
+    static bool isNewerVersion(const juce::String& remote, const juce::String& local);
+
 private:
     void run() override;
 
@@ -25,8 +29,6 @@ private:
     juce::ApplicationProperties* appProps = nullptr;
 
     static constexpr int CHECK_INTERVAL_SECONDS = 7 * 24 * 60 * 60; // 7 days
-
-    static bool isNewerVersion(const juce::String& remote, const juce::String& local);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UpdateChecker)
 };
