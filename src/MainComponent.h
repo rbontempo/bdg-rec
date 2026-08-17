@@ -68,6 +68,14 @@ private:
     // offered, so after two crashes the second take needed another relaunch.
     void promptForOrphans(juce::Array<juce::File> orphans, int index);
 
+    // The destination folder lives under ~/Downloads, which macOS guards with
+    // TCC. Every distinct probe (stat, statfs, readdir) raises its own consent
+    // prompt, and startup used to fire four of them — so the user was asked
+    // three or four times for the same folder. Everything that needs the
+    // folder now goes through here, once.
+    void openDestFolderOnce();
+    juce::File savedDestFolder;
+
     // One notification for the end of a take: plain "saved" when all went
     // well, or a persistent warning that also mentions the lost audio.
     void showTakeResult(const juce::File& file);

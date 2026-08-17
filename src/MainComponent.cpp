@@ -70,23 +70,14 @@ MainComponent::MainComponent()
     // Task 18 – load saved settings and apply to UI
     loadSettings();
 
-    // Sync disk space display with current folder
-    recordingPanel.setDestFolder(outputPanel.getDestFolder());
-
-    // Check for orphaned recordings from a previous crash.
-    // Only scan if the user has previously configured a custom folder
-    // (i.e. settings file exists with a destFolder entry). This avoids
-    // triggering the macOS folder-access permission dialog for ~/Downloads
-    // on the very first launch.
-    if (auto* props = appProperties.getUserSettings())
+    // Touch the destination folder exactly once, after construction, so the
+    // permission prompt happens a single time instead of once per probe.
     {
-        if (props->getValue("destFolder", "").isNotEmpty())
-        {
-            juce::MessageManager::callAsync([this]() {
-                auto orphans = audioEngine.findOrphanedRecordings(outputPanel.getDestFolder());
-                promptForOrphans(orphans, 0);
-            });
-        }
+        auto aliveFlag = uiAlive;
+        juce::MessageManager::callAsync([this, aliveFlag]() {
+            if (aliveFlag->load())
+                openDestFolderOnce();
+        });
     }
 
     // Update checker — weekly GitHub release check
@@ -143,6 +134,27 @@ void MainComponent::showTakeResult(const juce::File& file)
         saved + "  —  "
         + Strings::get().amostrasPerdidas.replace("%S", juce::String(lostSecs, 1)),
         InlineWarning::Warning, 0);
+}
+
+//==============================================================================
+// Destination folder (single TCC entry point)
+//==============================================================================
+void MainComponent::openDestFolderOnce()
+{
+    if (savedDestFolder == juce::File())
+        return;   // never configured: nothing to probe, no prompt on first run
+
+    // One probe. If it is refused, the folder simply stays unconfigured and
+    // the user picks one from the UI — which goes through the file chooser and
+    // grants access without a TCC prompt.
+    if (! savedDestFolder.isDirectory())
+        return;
+
+    outputPanel.setDestFolder(savedDestFolder);
+
+    // From here on the grant is in place, so the remaining reads are free.
+    recordingPanel.setDestFolder(savedDestFolder);
+    promptForOrphans(audioEngine.findOrphanedRecordings(savedDestFolder), 0);
 }
 
 //==============================================================================
@@ -258,12 +270,10 @@ void MainComponent::loadSettings()
         juce::String folderPath = props->getValue("destFolder", "");
         if (folderPath.isNotEmpty())
         {
-            juce::File folder(folderPath);
-            if (folder.isDirectory())
-            {
-                outputPanel.setDestFolder(folder);
-                recordingPanel.setDestFolder(folder);
-            }
+            // Deliberately no isDirectory() here: probing the folder is what
+            // triggers the macOS permission prompt, and that must happen in
+            // exactly one place (openDestFolderOnce).
+            savedDestFolder = juce::File(folderPath);
         }
 
         // Treatment toggles
