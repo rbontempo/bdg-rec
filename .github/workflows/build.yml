@@ -3,8 +3,12 @@ name: Build BDG rec
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+
+# Two pushes landing close together would otherwise run two version jobs that
+# read the same version, compute the same tag, and race on the push.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   version:
@@ -14,9 +18,8 @@ jobs:
       contents: write
     outputs:
       tag: ${{ steps.bump.outputs.tag }}
-      skipped: ${{ steps.bump.outputs.skipped }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
@@ -48,7 +51,6 @@ jobs:
           fi
 
           echo "tag=${NEW_TAG}" >> "$GITHUB_OUTPUT"
-          echo "skipped=false" >> "$GITHUB_OUTPUT"
 
           # Create and push tag
           git tag "$NEW_TAG"
@@ -56,20 +58,38 @@ jobs:
 
   build-macos:
     needs: version
-    if: needs.version.outputs.skipped != 'true'
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ needs.version.outputs.tag }}
           fetch-depth: 0
           submodules: recursive
 
+      - name: Cache fetched dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-deps-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: ${{ runner.os }}-deps-
+
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
 
       - name: Build
         run: cmake --build build --target BDG_REC --config Release
+
+      # The linker only ad-hoc signs the arm64 slice automatically. macOS 26
+      # (Tahoe) refuses to run code whose signature is missing or broken, so
+      # sign the whole bundle explicitly — both slices — before packaging.
+      - name: Ad-hoc codesign
+        run: |
+          APP="build/BDG_REC_artefacts/Release/BDG rec.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -111,20 +131,26 @@ jobs:
             "build/BDG_REC_artefacts/Release/BDG rec.app"
 
       - name: Upload macOS DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: BDG_REC_macOS
           path: dist/BDG_REC_macOS.dmg
 
   build-windows:
     needs: version
-    if: needs.version.outputs.skipped != 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ needs.version.outputs.tag }}
           submodules: recursive
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-deps-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: ${{ runner.os }}-deps-
 
       - name: Configure
         run: cmake -B build -G "Visual Studio 17 2022" -A x64
@@ -139,7 +165,7 @@ jobs:
         shell: cmd
 
       - name: Upload Windows EXE
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: BDG_REC_Windows
           path: dist/BDG_REC.exe
@@ -151,17 +177,17 @@ jobs:
       contents: write
     steps:
       - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: BDG_REC_macOS
 
       - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: BDG_REC_Windows
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           files: |

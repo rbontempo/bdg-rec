@@ -30,7 +30,8 @@ public:
     void dspError(const juce::String& error) override;
     void devicesChanged() override; // Task 19
     void diskSpaceWarning(int remainingMinutes) override; // Task 2
-    void recordingAutoStopped() override; // Task 2
+    void recordingFinished(const juce::File& file, AudioEngine::StopReason reason) override;
+    void recordingSaveFailed(const juce::File& preservedChunkFolder) override;
 
 private:
     BdgLookAndFeel bdgLookAndFeel;
@@ -51,11 +52,28 @@ private:
 
     // Recording state
     juce::File     lastRecordedFile;
+    // Carried from the stop to whichever notification lands last, so the
+    // "samples were lost" warning is not overwritten by "saved in folder".
+    juce::int64    lastTakeDropped = 0;
+    double         lastTakeRate = 0.0;
     bool           isRecording = false;
     bool           diskWarningShown = false;
 
     void handleRecordButtonClicked();
     void updateAnalyticsContext();
+    void applyLanguageChange();
+    void askAnalyticsConsentIfNeeded();
+
+    // Walks the orphan list one dialog at a time. Only the first was ever
+    // offered, so after two crashes the second take needed another relaunch.
+    void promptForOrphans(juce::Array<juce::File> orphans, int index);
+
+    // One notification for the end of a take: plain "saved" when all went
+    // well, or a persistent warning that also mentions the lost audio.
+    void showTakeResult(const juce::File& file);
+
+    // Guards async dialog callbacks against a destroyed MainComponent.
+    std::shared_ptr<std::atomic<bool>> uiAlive = std::make_shared<std::atomic<bool>>(true);
 
     // Task 18 – persist / restore settings
     void saveSettings();
@@ -82,7 +100,8 @@ private:
         idLangEN,
         idQuit,
         idWebsite,
-        idPortal
+        idPortal,
+        idAnalytics
     };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

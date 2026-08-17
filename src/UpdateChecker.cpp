@@ -5,7 +5,11 @@ UpdateChecker::UpdateChecker() : Thread("UpdateChecker") {}
 
 UpdateChecker::~UpdateChecker()
 {
-    stopThread(3000);
+    // Must exceed the worst case of the network call below (5 s connect plus
+    // the read). At 3 s JUCE gave up waiting and killed the thread by force —
+    // potentially inside the OS network stack, which is how you get the rare
+    // unreproducible crash on quit.
+    stopThread(15000);
 }
 
 void UpdateChecker::checkIfDue(juce::ApplicationProperties& props,
@@ -40,13 +44,19 @@ void UpdateChecker::run()
     auto url = juce::URL("https://api.github.com/repos/rbontempo/bdg-rec/releases/latest");
     auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                        .withConnectionTimeoutMs(5000)
-                       .withExtraHeaders("Accept: application/vnd.github.v3+json");
+                       .withExtraHeaders("Accept: application/vnd.github.v3+json")
+                       // Returning false aborts the transfer, which lets the
+                       // thread exit promptly on quit instead of being killed
+                       // mid-call.
+                       .withProgressCallback([this](int, int) { return ! threadShouldExit(); });
 
     auto stream = url.createInputStream(options);
-    if (stream == nullptr)
-        return; // no internet — fail silently
+    if (stream == nullptr || threadShouldExit())
+        return; // no internet, or we are shutting down — fail silently
 
     auto response = stream->readEntireStreamAsString();
+    if (threadShouldExit())
+        return;
     auto json = juce::JSON::parse(response);
 
     auto tagName = json.getProperty("tag_name", "").toString();

@@ -20,7 +20,9 @@ AnalyticsReporter::AnalyticsReporter() : Thread("AnalyticsReporter") {}
 
 AnalyticsReporter::~AnalyticsReporter()
 {
-    stopThread(5000);
+    // Longer than the 10 s connection timeout in sendBatch(); the old 5 s
+    // meant JUCE could kill this thread while it was inside a network call.
+    stopThread(20000);
     flush();
 }
 
@@ -39,17 +41,83 @@ void AnalyticsReporter::initialise(juce::ApplicationProperties& props, const juc
 
     if (auto* pf = props.getUserSettings())
     {
-        machineId = pf->getValue("machineId", "");
-        if (machineId.isEmpty())
+        consentAsked.store(pf->getBoolValue("analyticsConsentAsked", false));
+        enabled.store(pf->getBoolValue("analyticsEnabled", true));
+
+        // Only mint a machine id once the user has actually agreed — opting
+        // out must not leave a persistent identifier behind on disk.
+        if (consentAsked.load() && enabled.load())
         {
-            machineId = generateMachineId();
-            pf->setValue("machineId", machineId);
+            machineId = pf->getValue("machineId", "");
+            if (machineId.isEmpty())
+            {
+                machineId = generateMachineId();
+                pf->setValue("machineId", machineId);
+                pf->saveIfNeeded();
+            }
+        }
+        else if (! consentAsked.load())
+        {
+            // Upgrading from a version that collected without asking: the id
+            // and the spooled events on disk predate any consent. Drop them
+            // now, so answering the prompt starts from nothing rather than
+            // shipping data gathered under the old regime (and under a second,
+            // now-orphaned identifier).
+            pf->removeValue("machineId");
+            pf->removeValue("pendingAnalytics");
             pf->saveIfNeeded();
         }
     }
 
-    loadPendingEvents();
+    if (enabled.load() && consentAsked.load())
+        loadPendingEvents();
+
     startThread(juce::Thread::Priority::low);
+}
+
+bool AnalyticsReporter::hasAskedConsent() const
+{
+    return consentAsked.load();
+}
+
+void AnalyticsReporter::setConsent(bool allowed)
+{
+    enabled.store(allowed);
+    consentAsked.store(true);
+
+    if (appProps != nullptr)
+    {
+        if (auto* pf = appProps->getUserSettings())
+        {
+            pf->setValue("analyticsConsentAsked", true);
+            pf->setValue("analyticsEnabled", allowed);
+
+            if (allowed)
+            {
+                if (machineId.isEmpty())
+                {
+                    machineId = generateMachineId();
+                    pf->setValue("machineId", machineId);
+                }
+            }
+            else
+            {
+                // Opting out clears everything already held: the queued
+                // events, anything spooled to disk, and the identifier.
+                machineId.clear();
+                pf->removeValue("machineId");
+                pf->removeValue("pendingAnalytics");
+            }
+
+            pf->saveIfNeeded();
+        }
+    }
+
+    if (! allowed)
+    {
+        juce::ScopedLock lock(queueLock);
+        eventQueue.clear();
+    }
 }
 
 juce::String AnalyticsReporter::generateMachineId()
@@ -73,6 +141,12 @@ void AnalyticsReporter::setContext(const juce::String& os,
 
 void AnalyticsReporter::trackEvent(const juce::String& eventType, const juce::var& extra)
 {
+    // Nothing is collected before the prompt is answered. Queuing early would
+    // both persist data the user never agreed to and stamp the events with an
+    // empty machine_id, since the id is only minted on consent.
+    if (! enabled.load() || ! consentAsked.load())
+        return;
+
     auto evt = new juce::DynamicObject();
     evt->setProperty("event", eventType);
     evt->setProperty("machine_id", machineId);
@@ -104,6 +178,10 @@ void AnalyticsReporter::run()
 
 void AnalyticsReporter::sendBatch()
 {
+    // Hold, don't send, until the first-run prompt has been answered.
+    if (! enabled.load() || ! consentAsked.load())
+        return;
+
     juce::Array<juce::var> batch;
     {
         juce::ScopedLock lock(queueLock);
@@ -124,16 +202,20 @@ void AnalyticsReporter::sendBatch()
 
     auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
                        .withConnectionTimeoutMs(10000)
-                       .withExtraHeaders("Content-Type: application/json\r\nX-API-Key: " + apiKey);
+                       .withExtraHeaders("Content-Type: application/json\r\nX-API-Key: " + apiKey)
+                       .withProgressCallback([this](int, int) { return ! threadShouldExit(); });
 
     auto stream = url.createInputStream(options);
 
     if (stream == nullptr)
     {
         juce::ScopedLock lock(queueLock);
+        // Re-check: the user may have opted out while this batch was in flight.
+        if (! enabled.load())
+            return;
         for (auto& evt : batch)
             eventQueue.add(evt);
-        consecutiveFailures++;
+        consecutiveFailures = juce::jmin(consecutiveFailures + 1, MAX_BACKOFF_SHIFT);
         currentIntervalMs = juce::jmin(BATCH_INTERVAL_MS * (1 << consecutiveFailures), MAX_BATCH_INTERVAL_MS);
         return;
     }
@@ -143,9 +225,11 @@ void AnalyticsReporter::sendBatch()
     if (!responseJson.getProperty("ok", false))
     {
         juce::ScopedLock lock(queueLock);
+        if (! enabled.load())
+            return;
         for (auto& evt : batch)
             eventQueue.add(evt);
-        consecutiveFailures++;
+        consecutiveFailures = juce::jmin(consecutiveFailures + 1, MAX_BACKOFF_SHIFT);
         currentIntervalMs = juce::jmin(BATCH_INTERVAL_MS * (1 << consecutiveFailures), MAX_BATCH_INTERVAL_MS);
     }
     else
@@ -184,6 +268,9 @@ void AnalyticsReporter::loadPendingEvents()
 void AnalyticsReporter::savePendingEvents()
 {
     if (appProps == nullptr) return;
+    // Never spool events the user opted out of — or hasn't answered for yet.
+    if (! enabled.load() || ! consentAsked.load()) return;
+
     juce::ScopedLock lock(queueLock);
     if (eventQueue.isEmpty()) return;
 

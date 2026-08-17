@@ -31,6 +31,13 @@ private:
     };
 
     juce::Array<Step> steps;
+
+public:
+    // Step labels are captured when the list is built, so they froze in the
+    // language that was active at startup. Called on every language switch.
+    void updateLanguage();
+
+private:
     std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>>(true) };
 
     float spinAngle   = 0.0f;

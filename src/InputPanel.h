@@ -29,6 +29,16 @@ public:
     // Device hot-plug refresh (Task 19)
     void refreshDeviceList();
 
+    // Locks the device selector while a recording is running. Switching the
+    // input mid-take can reopen the device at a different sample rate, which
+    // silently corrupts the pitch and duration of everything recorded so far.
+    void setRecordingActive(bool active);
+
+    // The three buttons below take their text from Strings at construction
+    // time, and repaint() does not change a TextButton's label — so switching
+    // language left them in the old one.
+    void updateLanguage();
+
     // Callbacks for settings changes (Task 18)
     std::function<void()> onSettingsChanged;
 
@@ -37,6 +47,7 @@ private:
 
     // Task 9 – Device selector
     juce::ComboBox deviceCombo;
+    bool recordingActive = false;
 
     // Task 10 – VU meter
     VuMeter vuMeter;

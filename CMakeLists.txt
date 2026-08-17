@@ -1,7 +1,24 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Must be set before project() or CMake defaults the minimum to the host's
+# macOS version — which silently locks the app to whatever the build machine
+# happens to be running. 11.0 is the oldest release supporting both slices
+# of the universal binary.
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+endif()
+
 project(BDG_REC VERSION 1.1.9 LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# Link the MSVC runtime statically so the .exe does not need the Visual C++
+# Redistributable installed. Without this, a clean Windows machine greets the
+# user with "VCRUNTIME140.dll is missing" — and the app is distributed as a
+# bare .exe with no installer to pull the redist in.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
@@ -110,4 +127,21 @@ if(APPLE)
             "$<TARGET_BUNDLE_DIR:BDG_REC>/Contents/Resources/Icon.icns"
         COMMENT "Copying app icon"
     )
+endif()
+
+# ---- Sanitizers (opt-in, Debug) ----
+# cmake -B build -DCMAKE_BUILD_TYPE=Debug -DBDG_SANITIZE=ON
+# Worth running the test suite under this before touching the audio path.
+option(BDG_SANITIZE "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+if(BDG_SANITIZE AND NOT MSVC)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+# ---- Tests (opt-in) ----
+# cmake -B build -DBDG_BUILD_TESTS=ON && cmake --build build && ctest --test-dir build -L unit
+option(BDG_BUILD_TESTS "Build the test suite" OFF)
+if(BDG_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()

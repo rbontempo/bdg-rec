@@ -97,13 +97,44 @@ void InputPanel::setDevice(const juce::String& deviceName)
 
 void InputPanel::setVolume(int value)
 {
+    // The slider clamps what it *displays*, but the gain was applied from the
+    // raw value — a settings file with volume=100000 (corrupted or hand-edited)
+    // meant 1000x gain going straight into someone's headphones.
+    value = juce::jlimit(0, 200, value);
+
     volumeSlider.setValue(static_cast<double>(value), juce::dontSendNotification);
     audioEngine.setGain(static_cast<float>(value) / 100.0f);
     repaint(); // update volume % label
 }
 
+void InputPanel::updateLanguage()
+{
+    toggleBtn.setButtonText(Strings::get().areaRestrita);
+    portalBtn.setButtonText(Strings::get().portalCliente);
+    editBtn.setButtonText(Strings::get().editePodcast);
+    repaint();
+}
+
+void InputPanel::setRecordingActive(bool active)
+{
+    recordingActive = active;
+    deviceCombo.setEnabled(!active);
+
+    // Hot-plug events are ignored while recording, so the list can be stale by
+    // the time we unlock it — catch up now rather than waiting for the next
+    // unrelated device event.
+    if (! active)
+        refreshDeviceList();
+
+    repaint();
+}
+
 void InputPanel::refreshDeviceList()
 {
+    // A hot-plug event must not hand the selector back to the user mid-take.
+    if (recordingActive)
+        return;
+
     const juce::String currentName = deviceCombo.getText();
 
     deviceCombo.clear(juce::dontSendNotification);

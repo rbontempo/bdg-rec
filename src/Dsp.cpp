@@ -25,7 +25,11 @@ void Dsp::normalize(juce::AudioBuffer<float>& buffer, double sampleRate)
 
     // --- Step 2: RMS normalize to -16 dB target ---
     const float targetRms = (float)std::pow(10.0, -16.0 / 20.0); // ~0.1585
-    const float gain = targetRms / rms;
+    // Capped at +30 dB. Without a ceiling, near-silent material (a take where
+    // the mic was off, RMS ~1e-4) asked for around +64 dB, which does nothing
+    // but lift the noise floor to full scale before the limiter sees it.
+    const float maxGain = (float)std::pow(10.0, 30.0 / 20.0);
+    const float gain = juce::jmin(targetRms / rms, maxGain);
 
     for (int i = 0; i < numSamples; ++i)
         data[i] *= gain;
@@ -267,9 +271,13 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
 
     float* data = buffer.getWritePointer(0);
 
-    // RNNoise requires 48000 Hz and processes frames of exactly 480 samples.
+    // RNNoise requires 48000 Hz. Ask the library for its frame size instead
+    // of hardcoding 480 — a model with a different frame length would have
+    // overflowed the fixed-size arrays below.
     const double targetRate = 48000.0;
-    const int frameSize = 480; // 10 ms at 48 kHz
+    const int frameSize = rnnoise_get_frame_size();
+    if (frameSize <= 0)
+        return;
 
     bool needsResample = std::abs(sampleRate - targetRate) > 1.0;
 
@@ -295,17 +303,26 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
 
     // Process with RNNoise
     DenoiseState* st = rnnoise_create(nullptr);
+    if (st == nullptr)
+    {
+        // Allocation failed — plausible here, since the caller may already be
+        // holding several buffers the size of the whole take. Undo the scaling
+        // and leave the audio untouched rather than dereferencing null.
+        for (int i = 0; i < processLen; ++i)
+            processData[i] /= 32768.0f;
+        return;
+    }
 
     std::vector<float> output(static_cast<size_t>(processLen));
     int pos = 0;
-    float frame_in[480];
-    float frame_out[480];
+    std::vector<float> frame_in((size_t) frameSize);
+    std::vector<float> frame_out((size_t) frameSize);
 
     while (pos + frameSize <= processLen)
     {
-        std::copy(processData + pos, processData + pos + frameSize, frame_in);
-        rnnoise_process_frame(st, frame_out, frame_in);
-        std::copy(frame_out, frame_out + frameSize, output.data() + pos);
+        std::copy(processData + pos, processData + pos + frameSize, frame_in.data());
+        rnnoise_process_frame(st, frame_out.data(), frame_in.data());
+        std::copy(frame_out.data(), frame_out.data() + frameSize, output.data() + pos);
         pos += frameSize;
     }
 
@@ -313,10 +330,10 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
     if (pos < processLen)
     {
         int remaining = processLen - pos;
-        std::fill(frame_in, frame_in + frameSize, 0.0f);
-        std::copy(processData + pos, processData + pos + remaining, frame_in);
-        rnnoise_process_frame(st, frame_out, frame_in);
-        std::copy(frame_out, frame_out + remaining, output.data() + pos);
+        std::fill(frame_in.begin(), frame_in.end(), 0.0f);
+        std::copy(processData + pos, processData + pos + remaining, frame_in.data());
+        rnnoise_process_frame(st, frame_out.data(), frame_in.data());
+        std::copy(frame_out.data(), frame_out.data() + remaining, output.data() + pos);
     }
 
     rnnoise_destroy(st);
@@ -328,6 +345,12 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
     // If we resampled, convert back to original sample rate
     if (needsResample)
     {
+        // LagrangeInterpolator can consume one sample beyond processLen
+        // depending on its internal phase, so give it a small zero tail to
+        // read into. Harmless in practice but it is a real out-of-bounds read
+        // and ASan flags it.
+        output.resize(static_cast<size_t>(processLen) + 8, 0.0f);
+
         juce::LagrangeInterpolator interpolator;
         interpolator.reset();
         std::vector<float> backSampled(numSamples);
@@ -337,6 +360,6 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
     }
     else
     {
-        std::copy(output.begin(), output.end(), data);
+        std::copy(output.begin(), output.begin() + processLen, data);
     }
 }

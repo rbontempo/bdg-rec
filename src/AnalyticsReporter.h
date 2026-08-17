@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <juce_data_structures/juce_data_structures.h>
+#include <atomic>
 #include <functional>
 
 class AnalyticsReporter : private juce::Thread
@@ -15,6 +16,12 @@ public:
                     const juce::String& hardware, const juce::String& locale);
     juce::String getMachineId() const { return machineId; }
     void flush();
+
+    // Consent (LGPD). Nothing leaves the machine until the user has answered
+    // the first-run prompt, and nothing is collected at all once they opt out.
+    bool hasAskedConsent() const;
+    void setConsent(bool allowed);
+    bool isEnabled() const { return enabled.load(); }
 
 private:
     void run() override;
@@ -36,8 +43,18 @@ private:
     juce::CriticalSection queueLock;
     juce::Array<juce::var> eventQueue;
 
+    // enabled: user allows collection. consentAsked: the prompt has been
+    // answered at least once — until then events are held, never sent.
+    std::atomic<bool> enabled{true};
+    std::atomic<bool> consentAsked{false};
+
     static constexpr int BATCH_INTERVAL_MS = 30000;
     static constexpr int MAX_BATCH_INTERVAL_MS = 480000; // 8 min max backoff
+    // 30s << 4 == 8 min, i.e. the cap above. Without this ceiling the shift
+    // overflows int after ~17 failures (roughly 2 h offline), which is
+    // undefined behaviour and in practice yields a negative interval —
+    // wait() then blocks forever and the reporter never sends again.
+    static constexpr int MAX_BACKOFF_SHIFT = 4;
     static constexpr int MAX_QUEUE_SIZE = 500;
     int currentIntervalMs = BATCH_INTERVAL_MS;
     int consecutiveFailures = 0;

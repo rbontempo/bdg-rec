@@ -1,0 +1,69 @@
+name: CI
+
+# Pull requests used to run nothing at all: the release workflow declared a
+# `pull_request` trigger, but its first job was gated on `github.event_name ==
+# 'push'`, and the build jobs depended on that job without `if: always()`. So
+# every job was skipped and breakage only surfaced on push to main — which is
+# also what publishes a release.
+on:
+  pull_request:
+    branches: [main]
+
+# A new push to the same PR makes the previous run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-15
+            configure: >-
+              cmake -B build -DCMAKE_BUILD_TYPE=Release
+              -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          - name: Windows
+            os: windows-2022
+            configure: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+
+      # JUCE is fetched by CMake on every run and is by far the slowest part
+      # of the build. Keyed on CMakeLists.txt because that is where the JUCE
+      # tag lives, so bumping it correctly invalidates the cache.
+      - name: Cache fetched dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-deps-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: ${{ runner.os }}-deps-
+
+      - name: Configure
+        run: ${{ matrix.configure }} -DBDG_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --target BDG_REC --config Release
+
+      # Compile every test target, including the ones CI cannot run. Without
+      # this a change to AudioEngine's API would silently break the device
+      # tests and nobody would find out until someone built them by hand.
+      - name: Build tests
+        run: >
+          cmake --build build --config Release
+          --target BDG_UnitTests BDG_DspTests
+          BDG_RotationTest BDG_SampleRateTest BDG_EmptyTakeTest
+          BDG_RecoveryTest BDG_DiskFullTest
+
+      # Only the `unit` label runs: the device tests capture from a real
+      # microphone, which a runner does not have.
+      - name: Unit tests
+        run: ctest --test-dir build -C Release -L unit --output-on-failure

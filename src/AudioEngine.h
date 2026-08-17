@@ -5,11 +5,20 @@
 #include <memory>
 
 class AudioEngine : public juce::AudioIODeviceCallback,
-                    public juce::AsyncUpdater,
                     public juce::ChangeListener,
                     public juce::Timer
 {
 public:
+    // Why a recording ended. Carried through to the listener so the UI can say
+    // the right thing without each stop path inventing its own notification.
+    enum class StopReason
+    {
+        UserRequested,
+        DiskFull,
+        DeviceLost,
+        DeviceRateChanged
+    };
+
     //==============================================================================
     class Listener
     {
@@ -24,7 +33,14 @@ public:
         virtual void devicesChanged() {}
         // Task 2: disk space monitoring
         virtual void diskSpaceWarning(int remainingMinutes) {}
-        virtual void recordingAutoStopped() {}
+        // The take was merged and written successfully. Always delivered on
+        // the message thread, possibly a while after the stop was requested —
+        // merging a long recording takes time and now runs in the background.
+        virtual void recordingFinished(const juce::File& file, StopReason reason) {}
+        // Concatenation failed (usually a full disk). The raw chunks were NOT
+        // deleted — they stay in this folder and the orphan-recovery flow can
+        // pick them up on the next launch.
+        virtual void recordingSaveFailed(const juce::File& preservedChunkFolder) {}
     };
 
     //==============================================================================
@@ -38,6 +54,11 @@ public:
     juce::StringArray getInputDevices();
     void setInputDevice(const juce::String& name);
     juce::String getCurrentInputDeviceName() const;
+
+    // Coarse device class ("builtin" / "usb" / "bluetooth" / "other" / "none").
+    // Device *names* routinely embed the owner's name ("AirPods do Renato"),
+    // so analytics reports this fixed vocabulary instead of the raw string.
+    juce::String getCurrentInputDeviceCategory() const;
 
     // Access device manager (for UI components)
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
@@ -60,8 +81,28 @@ public:
     //==============================================================================
     // Recording pipeline
     bool        startRecording(const juce::File& destFolder);
+
+    // Stops and merges in the background; the result arrives via
+    // Listener::recordingFinished or Listener::recordingSaveFailed. This is
+    // what the UI should call.
+    void        stopRecordingAsync(StopReason reason);
+
+    // Blocking variant: stops and merges inline, returning the finished file
+    // (or an empty File on failure). Only for shutdown and tests — merging a
+    // long take here will block the calling thread for as long as it takes.
     juce::File  stopRecording();
+
     bool        isRecording() const;
+
+    // Samples the write path could not accept during the last take (disk
+    // stalls). Zero on a healthy recording.
+    juce::int64 getDroppedSamples() const { return droppedSamples.load(); }
+
+    // Rate the last take was actually recorded at. Comes from the snapshot
+    // taken when the take stopped — reading the live nativeSampleRate here
+    // would report whatever the device renegotiated to in the meantime,
+    // which is the very thing the snapshot exists to avoid.
+    double getTakeSampleRate() const { return pendingSave.sampleRate; }
 
     //==============================================================================
     // DSP processing (runs on background thread)
@@ -82,10 +123,6 @@ public:
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
-
-    //==============================================================================
-    // AsyncUpdater
-    void handleAsyncUpdate() override;
 
     //==============================================================================
     // ChangeListener – receives device-manager change notifications (Task 19)
@@ -111,9 +148,6 @@ private:
 
     juce::ListenerList<Listener> listeners;
 
-    // Throttle: fire update at most every 50 ms
-    std::atomic<juce::int64> lastUpdateMs{0};
-
     //==============================================================================
     // Recording members
     std::atomic<bool> recording{false};
@@ -133,14 +167,95 @@ private:
     juce::int64 samplesPerChunk{0}; // 5 min * sampleRate
     std::atomic<bool> chunkRotationPending{false};
 
+    // Set when the device reopens at a rate the current chunks weren't
+    // written at. Stops the write path immediately, without clearing
+    // `recording` — stopRecording() still has to run to save what we have.
+    std::atomic<bool> deviceMismatch{false};
+
+    // Pre-allocated in audioDeviceAboutToStart. Building an AudioBuffer inside
+    // the callback meant a malloc/free on the audio thread for every block.
+    juce::AudioBuffer<float> monoBuffer;
+
+    // Samples the writer refused (its FIFO backed up because the disk stalled)
+    // plus anything a short scratch buffer could not hold. Counted so the loss
+    // is reportable instead of silent.
+    std::atomic<juce::int64> droppedSamples{0};
+
+    // One always-on timer at 20 Hz: it publishes the VU levels (so the audio
+    // thread never has to post a message) and, while recording, checks the
+    // rotation flag every tick and the disk every 200th — the original 10 s.
+    int timerTicks{0};
+    static constexpr int kTimerIntervalMs = 50;
+    static constexpr int kDiskCheckEveryTicks = 200;
+
     // SpinLock to protect threadedWriter during chunk rotation
     juce::SpinLock writerLock;
 
     // Prevent dangling this in callAsync lambdas
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);
 
+    // Result of merging the chunk files into the final WAV. `ok` is only true
+    // when every sample was written AND the finished file reads back at the
+    // expected length — callers must check it before deleting the chunks.
+    struct ConcatResult
+    {
+        juce::File file;
+        bool ok = false;
+    };
+
     bool openNextChunk();
-    juce::File concatenateChunks();
+    // Everything the merge needs, captured at the moment the take stops.
+    // The merge runs on a background thread; reading the live members there
+    // let a device reopening mid-shutdown rewrite nativeSampleRate and stamp
+    // the final header with a rate the chunks were never recorded at.
+    struct SaveJob
+    {
+        juce::File  chunkFolder;
+        int         chunkIndex = 0;
+        double      sampleRate = 0.0;
+    };
+
+    ConcatResult concatenateChunks(const SaveJob& job);
+
+    // The two halves of stopping: finishWriting() is fast (closes the writer
+    // and snapshots the job), finaliseSave() is the expensive merge.
+    bool finishWriting();
+    juce::File finaliseSave();
+
+    SaveJob pendingSave;
+
+    // Runs finaliseSave() off the message thread and reports back on it.
+    class SaveThread : public juce::Thread
+    {
+    public:
+        SaveThread(AudioEngine& e, StopReason r)
+            : juce::Thread("BDG Save"), engine(e), reason(r) {}
+
+        void run() override
+        {
+            auto file = engine.finaliseSave();
+            auto aliveFlag = engine.alive;
+            auto* eng = &engine;
+            const auto why = reason;
+
+            if (file == juce::File())
+                return;   // finaliseSave() already reported the failure
+
+            juce::MessageManager::callAsync([eng, aliveFlag, file, why]()
+            {
+                // Qualified: juce::Thread also has a nested Listener, and
+                // inside this class that one wins name lookup.
+                if (aliveFlag->load())
+                    eng->listeners.call(&AudioEngine::Listener::recordingFinished, file, why);
+            });
+        }
+
+    private:
+        AudioEngine& engine;
+        StopReason reason;
+    };
+
+    std::unique_ptr<SaveThread> saveThread;
 
     //==============================================================================
     // DSP background thread

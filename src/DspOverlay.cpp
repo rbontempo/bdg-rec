@@ -14,6 +14,20 @@ DspOverlay::DspOverlay()
     setInterceptsMouseClicks(true, true); // block all clicks behind
 }
 
+void DspOverlay::updateLanguage()
+{
+    // Matched by id, so the mapping cannot drift if the list is reordered.
+    for (auto& st : steps)
+    {
+        if      (st.key == "normalize")       st.name = Strings::get().normalizacao;
+        else if (st.key == "noise_reduction") st.name = Strings::get().reducaoRuidoStep;
+        else if (st.key == "compressor")      st.name = Strings::get().compressor;
+        else if (st.key == "de_esser")        st.name = Strings::get().deEsser;
+        else if (st.key == "saving")          st.name = Strings::get().salvandoArquivo;
+    }
+    repaint();
+}
+
 DspOverlay::~DspOverlay()
 {
     alive->store(false);

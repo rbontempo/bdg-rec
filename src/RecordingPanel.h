@@ -44,6 +44,9 @@ private:
     // State
     bool  isRecording  = false;
     int   elapsedSecs  = 0;
+    // Wall-clock anchor. Counting timer ticks drifted: the label and the
+    // duration reported to analytics lost seconds over a long session.
+    double startMs = 0.0;
     int   timerTick    = 0;   // used for blink (incremented each 500 ms tick)
 
     // Disk space
