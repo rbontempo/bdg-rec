@@ -1,25 +1,44 @@
 -- Normaliza a coluna `hardware` para o vocabulário fixo
--- (builtin / usb / bluetooth / other / none).
+-- (builtin / usb / bluetooth / other / none), arquivando antes o valor original.
 --
--- Motivo: até a v1.1.11 o app enviava o NOME do dispositivo de entrada, e
--- nomes de dispositivo de áudio costumam conter o nome da pessoa — "AirPods
--- do Renato", "iPhone de Fulano — Microfone". Isso é dado pessoal, e está
--- gravado nas linhas antigas desta tabela.
+-- Contexto: até a v1.1.11 o app enviava o NOME do dispositivo de entrada.
+-- Nome de dispositivo de áudio PODE conter o nome da pessoa ("AirPods do
+-- Fulano"), e por isso a v1.1.12 passou a enviar categoria e o servidor
+-- normaliza o que chega de versões antigas (normalizeHardware em api/config.php).
 --
--- A partir da v1.1.12 o app envia categoria, e `normalizeHardware()` em
--- api/config.php converte o que chegar de versões antigas. Esta migração
--- cuida do que já está no banco.
+-- Ao inspecionar o banco de produção antes de rodar, porém, os 577 registros
+-- históricos se mostraram descrições de hardware ("Microphone (2- HyperX
+-- QuadCast S)", "Microfone (C922 Pro Stream Webcam)"), sem nome de pessoa.
+-- Esse detalhe é informação de produto útil — quais microfones os usuários
+-- têm — e normalizar apagaria 345 deles em 'other'.
 --
--- A ordem dos UPDATEs importa: cada um só toca linhas que ainda não foram
--- classificadas, então rodar de novo é inofensivo (idempotente).
+-- Daí o arquivo: `events` fica consistente, e o detalhe segue consultável.
+--
+-- Idempotente: cada passo só toca o que ainda não foi classificado.
 --
 -- Uso:
---   mysql -u USER -p bdg_analytics < migrations/001-normalize-hardware.sql
+--   mysql -u USER -p BANCO < migrations/001-normalize-hardware.sql
 
 START TRANSACTION;
 
--- Quantas linhas ainda têm nome cru (para conferir depois).
-SELECT COUNT(*) AS linhas_com_nome_cru
+-- ---------------------------------------------------------------- arquivo
+CREATE TABLE IF NOT EXISTS events_hardware_legacy (
+    event_id    BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    hardware    VARCHAR(100) NOT NULL,
+    archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- INSERT IGNORE + a chave primária tornam o passo repetível.
+INSERT IGNORE INTO events_hardware_legacy (event_id, hardware)
+SELECT id, hardware
+FROM events
+WHERE hardware IS NOT NULL
+  AND hardware NOT IN ('builtin', 'usb', 'bluetooth', 'other', 'none');
+
+SELECT COUNT(*) AS arquivadas FROM events_hardware_legacy;
+
+-- ------------------------------------------------------------ normalização
+SELECT COUNT(*) AS antes_com_nome_cru
 FROM events
 WHERE hardware IS NOT NULL
   AND hardware NOT IN ('builtin', 'usb', 'bluetooth', 'other', 'none');
@@ -46,12 +65,11 @@ WHERE hardware IS NOT NULL
     OR LOWER(hardware) LIKE '%interno%'
     OR LOWER(hardware) LIKE '%integrado%');
 
--- Tudo que sobrou vira 'other'. É aqui que os nomes próprios somem.
 UPDATE events SET hardware = 'other'
 WHERE hardware IS NOT NULL
   AND hardware NOT IN ('builtin', 'usb', 'bluetooth', 'other', 'none');
 
--- Confirmação: deve retornar zero.
+-- --------------------------------------------------------------- conferência
 SELECT COUNT(*) AS restaram_nao_normalizados
 FROM events
 WHERE hardware IS NOT NULL
@@ -63,3 +81,8 @@ GROUP BY hardware
 ORDER BY total DESC;
 
 COMMIT;
+
+-- Para recuperar o detalhe depois:
+--   SELECT l.hardware, COUNT(*) n
+--   FROM events_hardware_legacy l
+--   GROUP BY l.hardware ORDER BY n DESC;
