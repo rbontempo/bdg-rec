@@ -42,6 +42,7 @@ void RecordingPanel::startRecording(const juce::File& destFolder)
 {
     isRecording = true;
     elapsedSecs = 0;
+    startMs = juce::Time::getMillisecondCounterHiRes();
     diskUpdateTick = 0;
     currentDestFolder = destFolder;
     waveformDisplay.setRecording(true);
@@ -92,10 +93,11 @@ void RecordingPanel::timerCallback()
 
     if (isRecording)
     {
-        // Increment elapsed every 2 ticks (1 second)
+        // Derive from the clock rather than counting ticks — a dropped or
+        // late tick used to make the recording look shorter than it was.
         if (timerTick % 2 == 0)
         {
-            elapsedSecs++;
+            elapsedSecs = (int) ((juce::Time::getMillisecondCounterHiRes() - startMs) / 1000.0);
             updateTimerLabel();
 
             // Disk space every 5 seconds

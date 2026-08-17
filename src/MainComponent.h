@@ -60,6 +60,10 @@ private:
     void applyLanguageChange();
     void askAnalyticsConsentIfNeeded();
 
+    // Walks the orphan list one dialog at a time. Only the first was ever
+    // offered, so after two crashes the second take needed another relaunch.
+    void promptForOrphans(juce::Array<juce::File> orphans, int index);
+
     // Guards async dialog callbacks against a destroyed MainComponent.
     std::shared_ptr<std::atomic<bool>> uiAlive = std::make_shared<std::atomic<bool>>(true);
 

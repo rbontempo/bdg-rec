@@ -99,6 +99,10 @@ public:
     // stalls). Zero on a healthy recording.
     juce::int64 getDroppedSamples() const { return droppedSamples.load(); }
 
+    // Rate the last take was recorded at, for turning dropped samples into
+    // seconds after the fact.
+    double getLastSampleRate() const { return nativeSampleRate.load(); }
+
     //==============================================================================
     // DSP processing (runs on background thread)
     void processRecording(const juce::File& file,
@@ -183,10 +187,12 @@ private:
     // is reportable instead of silent.
     std::atomic<juce::int64> droppedSamples{0};
 
-    // Timer runs at 1 s so chunk rotation is picked up promptly; the disk
-    // check only needs every tenth tick, matching the old 10 s cadence.
+    // One always-on timer at 20 Hz: it publishes the VU levels (so the audio
+    // thread never has to post a message) and, while recording, checks the
+    // rotation flag every tick and the disk every 200th — the original 10 s.
     int timerTicks{0};
-    static constexpr int kDiskCheckEveryTicks = 10;
+    static constexpr int kTimerIntervalMs = 50;
+    static constexpr int kDiskCheckEveryTicks = 200;
 
     // SpinLock to protect threadedWriter during chunk rotation
     juce::SpinLock writerLock;

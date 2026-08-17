@@ -84,35 +84,7 @@ MainComponent::MainComponent()
         {
             juce::MessageManager::callAsync([this]() {
                 auto orphans = audioEngine.findOrphanedRecordings(outputPanel.getDestFolder());
-                if (!orphans.isEmpty())
-                {
-                    auto folder = orphans.getFirst();
-                    auto options = juce::MessageBoxOptions()
-                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                        .withTitle("BDG rec")
-                        .withMessage(Strings::get().gravacaoAnterior)
-                        .withButton(Strings::get().recuperar)
-                        .withButton(Strings::get().descartar)
-                        .withButton(Strings::get().ignorar);
-
-                    juce::AlertWindow::showAsync(options, [this, folder](int result)
-                    {
-                        if (result == 1) // Recuperar
-                        {
-                            auto recovered = audioEngine.recoverRecording(folder);
-                            if (recovered.existsAsFile())
-                                inlineWarning.show(
-                                    Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
-                            else
-                                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                                    "BDG rec", Strings::get().falhaRecuperacao);
-                        }
-                        else if (result == 2) // Descartar
-                        {
-                            audioEngine.discardRecording(folder);
-                        }
-                    });
-                }
+                promptForOrphans(orphans, 0);
             });
         }
     }
@@ -150,6 +122,50 @@ MainComponent::~MainComponent()
 
     // Flush settings to disk
     appProperties.closeFiles();
+}
+
+//==============================================================================
+// Crash recovery
+//==============================================================================
+void MainComponent::promptForOrphans(juce::Array<juce::File> orphans, int index)
+{
+    if (index >= orphans.size())
+        return;
+
+    auto folder = orphans[index];
+    auto aliveFlag = uiAlive;
+
+    auto options = juce::MessageBoxOptions()
+        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+        .withTitle("BDG rec")
+        .withMessage(Strings::get().gravacaoAnterior)
+        .withButton(Strings::get().recuperar)
+        .withButton(Strings::get().descartar)
+        .withButton(Strings::get().ignorar);
+
+    juce::AlertWindow::showAsync(options, [this, aliveFlag, orphans, index, folder](int result)
+    {
+        if (! aliveFlag->load())
+            return;
+
+        if (result == 1) // Recuperar
+        {
+            auto recovered = audioEngine.recoverRecording(folder);
+            if (recovered.existsAsFile())
+                inlineWarning.show(
+                    Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
+            else
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "BDG rec", Strings::get().falhaRecuperacao);
+        }
+        else if (result == 2) // Descartar
+        {
+            audioEngine.discardRecording(folder);
+        }
+
+        // Move on to the next one, if any.
+        promptForOrphans(orphans, index + 1);
+    });
 }
 
 //==============================================================================
@@ -348,6 +364,26 @@ void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopR
         }
 
         lastRecordedFile = file;
+
+        // The engine counts what the write path could not accept when the disk
+        // stalled. Silently handing over a take with holes in it is exactly the
+        // kind of thing this audit was about.
+        const auto dropped = audioEngine.getDroppedSamples();
+        if (dropped > 0)
+        {
+            const double lostSecs = (double) dropped
+                                  / juce::jmax(1.0, audioEngine.getLastSampleRate());
+            inlineWarning.show(
+                Strings::get().amostrasPerdidas.replace("%S", juce::String(lostSecs, 1)),
+                InlineWarning::Warning, 0);
+
+            analyticsReporter.trackEvent("error", [&]() {
+                auto extra = new juce::DynamicObject();
+                extra->setProperty("error_code", "samples_dropped");
+                extra->setProperty("message", juce::String(dropped) + " samples dropped");
+                return juce::var(extra);
+            }());
+        }
 
         analyticsReporter.trackEvent("recording_end", [&]() {
             auto extra = new juce::DynamicObject();

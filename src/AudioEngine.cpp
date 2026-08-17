@@ -54,6 +54,10 @@ void AudioEngine::initialise()
     deviceManager.addAudioCallback(this);
     deviceManager.addChangeListener(this);
 
+    // 20 Hz: fast enough for the VU meter, and it doubles as the chunk
+    // rotation and disk-space poll while a take is running.
+    startTimer(kTimerIntervalMs);
+
     if (auto* dev = deviceManager.getCurrentAudioDevice())
         DBG("AudioEngine::initialise OK: " + dev->getName());
     else
@@ -309,13 +313,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
                 juce::FloatVectorOperations::clear(outputChannelData[outCh], numSamples);
     }
 
-    // ---- Throttled UI notification (50 ms) ----
-    const juce::int64 now = juce::Time::currentTimeMillis();
-    if (now - lastUpdateMs.load() >= 50)
-    {
-        lastUpdateMs.store(now);
-        triggerAsyncUpdate();
-    }
+    // Levels are published as plain atomics; the always-on timer picks them
+    // up on the message thread. Posting a message from here (triggerAsyncUpdate)
+    // goes through the message queue's lock and can allocate when the queue
+    // grows — the same thing the comment below rejects for callAsync.
 
     // ---- Recording pipeline ----
     // deviceMismatch means the rate changed under us: stop feeding the writer
@@ -333,11 +334,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         if (n <= 0)
             return;
 
-        // Downmix all input channels to mono, applying gain
+        // Downmix all input channels to mono, applying gain.
+        // Divide by the channels that actually carry samples, not by the size
+        // of the array. The engine asks for 2 inputs; a mono interface hands
+        // back one live pointer and one null, and dividing by 2 anyway made
+        // every recording 6 dB quieter than it should be.
+        int contributing = 0;
+        for (int ch = 0; ch < numInputChannels; ++ch)
+            if (inputChannelData[ch] != nullptr)
+                ++contributing;
+
+        if (contributing == 0)
+            return;
+
         monoBuffer.clear(0, 0, n);
 
         float* mono = monoBuffer.getWritePointer(0);
-        const float channelScale = 1.0f / static_cast<float>(numInputChannels);
+        const float channelScale = 1.0f / static_cast<float>(contributing);
 
         for (int ch = 0; ch < numInputChannels; ++ch)
         {
@@ -379,9 +392,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 //==============================================================================
 void AudioEngine::handleAsyncUpdate()
 {
-    float l = rmsL.load();
-    float r = rmsR.load();
-    listeners.call(&Listener::audioLevelsChanged, l, r);
+    // Kept only to satisfy the AsyncUpdater base; levels now come from the
+    // timer so nothing is posted from the audio thread.
 }
 
 //==============================================================================
@@ -467,7 +479,6 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     timerTicks = 0;
 
     recording.store(true);
-    startTimer(1000); // chunk rotation each tick; disk space every 10th
     DBG("  Chunk recording started. chunkFolder=" + chunkFolder.getFullPathName()
         + " samplesPerChunk=" + juce::String(samplesPerChunk));
     return true;
@@ -682,7 +693,7 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks(const SaveJob& job)
 
 bool AudioEngine::finishWriting()
 {
-    stopTimer();
+    // The timer keeps running — it also drives the VU meter.
 
     // Reentrancy guard. The auto-stop path leaves a window in which a queued
     // button click can call this a second time; the second pass would run the
@@ -777,6 +788,9 @@ bool AudioEngine::isRecording() const
 //==============================================================================
 void AudioEngine::timerCallback()
 {
+    // ---- UI levels (runs whether or not we are recording) ----
+    listeners.call(&Listener::audioLevelsChanged, rmsL.load(), rmsR.load());
+
     if (!recording.load()) return;
 
     // ---- Chunk rotation (flag raised by the audio thread) ----
@@ -794,7 +808,7 @@ void AudioEngine::timerCallback()
         }
     }
 
-    // ---- Disk space (every 10th tick, i.e. the original 10 s cadence) ----
+    // ---- Disk space (kept at the original 10 s cadence) ----
     if (++timerTicks < kDiskCheckEveryTicks)
         return;
 
@@ -809,8 +823,10 @@ void AudioEngine::timerCallback()
 
     if (remainingMin < 2)
     {
-        stopTimer();
-        // Auto-stop on message thread
+        // Don't stopTimer() here — it also drives the VU meter now. Clearing
+        // `recording` in finishWriting() is what stops the disk polling, and
+        // the stop itself is idempotent, so a second tick before it lands is
+        // harmless.
         auto aliveFlag = alive;
         juce::MessageManager::callAsync([this, aliveFlag]() {
             if (!aliveFlag->load()) return;

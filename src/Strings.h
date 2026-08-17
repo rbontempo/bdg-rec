@@ -40,6 +40,8 @@ struct StringTable
     // Analytics consent (first run)
     juce::String consentTitulo, consentCorpo, consentAceitar, consentRecusar;
     juce::String menuAnalytics;
+    // Shown when the write path could not keep up with the disk
+    juce::String amostrasPerdidas;
 };
 
 namespace Strings
@@ -130,6 +132,8 @@ namespace Strings
         .consentAceitar = juce::CharPointer_UTF8 ("Permitir"),
         .consentRecusar = juce::CharPointer_UTF8 ("N\xc3\xa3" "o enviar"),
         .menuAnalytics = juce::CharPointer_UTF8 ("Enviar dados de uso an\xc3\xb4" "nimos"),
+        .amostrasPerdidas = juce::CharPointer_UTF8 ("Aten\xc3\xa7\xc3\xa3" "o: o disco n\xc3\xa3" "o acompanhou a grava\xc3\xa7\xc3\xa3" "o e "
+                                "aproximadamente %S segundos de \xc3\xa1" "udio se perderam."),
     };
 
     // English table
@@ -217,6 +221,8 @@ namespace Strings
         .consentAceitar = "Allow",
         .consentRecusar = "Don't send",
         .menuAnalytics = "Send anonymous usage data",
+        .amostrasPerdidas = "Warning: the disk could not keep up and roughly %S seconds "
+                            "of audio were lost.",
     };
 
     // Current language (default: Portuguese)
