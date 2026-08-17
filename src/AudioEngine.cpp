@@ -788,6 +788,92 @@ juce::Array<juce::File> AudioEngine::findOrphanedRecordings(const juce::File& de
     return orphans;
 }
 
+namespace
+{
+    // A WAV writer only backfills the real length into the header when it is
+    // closed. After a crash the chunk that was being recorded still holds all
+    // its PCM, but the header claims zero samples — createReaderFor() succeeds
+    // and reports length 0, so the normal copy path silently drops it. This
+    // walks the RIFF chunks, finds the `data` payload, and derives the sample
+    // count from the bytes actually on disk.
+    juce::int64 salvageTruncatedChunk(const juce::File& chunkFile,
+                                      juce::AudioFormatWriter* writer)
+    {
+        auto stream = std::unique_ptr<juce::FileInputStream>(chunkFile.createInputStream());
+        if (stream == nullptr || ! stream->openedOk())
+            return 0;
+
+        const juce::int64 fileSize = stream->getTotalLength();
+        if (fileSize <= 44)
+            return 0;
+
+        // RIFF....WAVE, then a sequence of <id><size><payload> chunks.
+        if (stream->readInt() != (int) juce::ByteOrder::littleEndianInt("RIFF"))
+            return 0;
+        stream->readInt(); // riff size (unreliable on a truncated file)
+        if (stream->readInt() != (int) juce::ByteOrder::littleEndianInt("WAVE"))
+            return 0;
+
+        juce::int64 dataOffset = 0;
+        while (! stream->isExhausted() && stream->getPosition() + 8 <= fileSize)
+        {
+            const int id   = stream->readInt();
+            const int size = stream->readInt();
+
+            if (id == (int) juce::ByteOrder::littleEndianInt("data"))
+            {
+                dataOffset = stream->getPosition();
+                break;
+            }
+
+            if (size < 0)
+                return 0;
+
+            stream->setPosition(stream->getPosition() + size + (size & 1)); // chunks are word-aligned
+        }
+
+        if (dataOffset <= 0 || dataOffset >= fileSize)
+            return 0;
+
+        // 24-bit mono: 3 bytes per sample.
+        const juce::int64 numSamples = (fileSize - dataOffset) / 3;
+        if (numSamples <= 0)
+            return 0;
+
+        stream->setPosition(dataOffset);
+
+        const int blockSize = 65536;
+        juce::AudioBuffer<float> buffer(1, blockSize);
+        std::vector<juce::uint8> raw((size_t) blockSize * 3);
+        juce::int64 written = 0;
+
+        while (written < numSamples)
+        {
+            const int thisBlock = (int) juce::jmin((juce::int64) blockSize, numSamples - written);
+            const int wanted = thisBlock * 3;
+
+            if (stream->read(raw.data(), wanted) != wanted)
+                break;
+
+            float* dest = buffer.getWritePointer(0);
+            for (int i = 0; i < thisBlock; ++i)
+            {
+                const juce::uint8* p = raw.data() + (size_t) i * 3;
+                juce::int32 v = (juce::int32) (p[0] | (p[1] << 8) | (p[2] << 16));
+                if (v & 0x800000) v |= ~0xffffff; // sign-extend 24 -> 32 bits
+                dest[i] = (float) v / 8388608.0f;
+            }
+
+            if (! writer->writeFromAudioSampleBuffer(buffer, 0, thisBlock))
+                break;
+
+            written += thisBlock;
+        }
+
+        return written;
+    }
+}
+
 juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
 {
     // Detect sample rate from first valid chunk
@@ -850,6 +936,9 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
 
     outStream.release(); // writer owns the stream
 
+    juce::int64 recoveredSamples = 0;
+    bool writeFailed = false;
+
     for (int i = 1; i <= detectedChunkCount; ++i)
     {
         juce::File chunkFile = orphanedChunkFolder.getChildFile(
@@ -858,13 +947,29 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
         std::unique_ptr<juce::AudioFormatReader> reader(
             formatManager.createReaderFor(chunkFile));
 
+        const juce::int64 totalSamples = (reader != nullptr) ? reader->lengthInSamples : 0;
+
+        // No usable length but real bytes on disk is the signature of the
+        // chunk that was open when the app died — the case this whole function
+        // exists for. Depending on how much of the header survived, JUCE
+        // either reports 0/-1 or refuses to make a reader at all, so treat
+        // every one of those the same and read the PCM payload directly.
+        if (totalSamples <= 0 && chunkFile.getSize() > 44)
+        {
+            reader.reset(); // release the handle before re-reading the file
+            const juce::int64 salvaged = salvageTruncatedChunk(chunkFile, finalWriter);
+            DBG("recoverRecording: salvaged " + juce::String(salvaged)
+                + " samples from unfinalised chunk " + juce::String(i));
+            recoveredSamples += salvaged;
+            continue;
+        }
+
         if (reader == nullptr)
         {
             DBG("recoverRecording: skipping corrupted chunk " + juce::String(i));
             continue;
         }
 
-        const juce::int64 totalSamples = reader->lengthInSamples;
         const int blockSize = 65536;
         juce::AudioBuffer<float> buffer(1, blockSize);
 
@@ -872,16 +977,37 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
         {
             int samplesToRead = (int)juce::jmin((juce::int64)blockSize, totalSamples - pos);
             reader->read(&buffer, 0, samplesToRead, pos, true, false);
-            finalWriter->writeFromAudioSampleBuffer(buffer, 0, samplesToRead);
+
+            if (! finalWriter->writeFromAudioSampleBuffer(buffer, 0, samplesToRead))
+            {
+                DBG("recoverRecording: write FAILED on chunk " + juce::String(i));
+                writeFailed = true;
+                break;
+            }
+
+            recoveredSamples += samplesToRead;
         }
+
+        if (writeFailed)
+            break;
     }
 
     delete finalWriter;
 
-    // Remove orphaned folder
+    // Same rule as stopRecording(): the chunks are the only intact copy, so
+    // they are not deleted until the recovered file is known to be good.
+    if (writeFailed || recoveredSamples == 0)
+    {
+        DBG("recoverRecording: FAILED — keeping chunks at "
+            + orphanedChunkFolder.getFullPathName());
+        finalFile.deleteFile();
+        return {};
+    }
+
     orphanedChunkFolder.deleteRecursively();
 
-    DBG("recoverRecording: recovered to " + finalFile.getFullPathName());
+    DBG("recoverRecording: recovered " + juce::String(recoveredSamples)
+        + " samples to " + finalFile.getFullPathName());
     return finalFile;
 }
 
