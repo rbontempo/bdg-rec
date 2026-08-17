@@ -10,6 +10,11 @@ on:
       - 'site/**'
       - 'docs/**'
       - '**/*.md'
+      # Changing a workflow does not change the binaries, so it should not cut
+      # a release of identical ones. Workflow edits get validated by ci.yml on
+      # the pull request instead — that one deliberately does NOT ignore
+      # .github, so a CI-only PR still builds the app on both platforms.
+      - '.github/**'
 
 # Two pushes landing close together would otherwise run two version jobs that
 # read the same version, compute the same tag, and race on the push.
