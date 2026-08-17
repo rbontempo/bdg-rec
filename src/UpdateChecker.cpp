@@ -20,8 +20,10 @@ void UpdateChecker::checkIfDue(juce::ApplicationProperties& props,
 
     if (auto* pf = props.getUserSettings())
     {
-        auto last = pf->getIntValue("lastUpdateCheck", 0);
-        auto now  = (int)(juce::Time::currentTimeMillis() / 1000);
+        // Stored as text, not an int: seconds since the epoch stop fitting in
+        // a 32-bit int in 2038, and juce::String round-trips int64 cleanly.
+        const auto last = pf->getValue("lastUpdateCheck", "0").getLargeIntValue();
+        const auto now  = juce::Time::currentTimeMillis() / 1000;
 
         if (now - last < CHECK_INTERVAL_SECONDS)
             return; // too soon
@@ -34,6 +36,13 @@ void UpdateChecker::forceCheck(std::function<void(juce::String)> onUpdateAvailab
 {
     if (isThreadRunning())
         return; // already checking
+
+    // run() writes the timestamp through appProps. Today checkIfDue() always
+    // runs first from the MainComponent constructor, so this cannot fire —
+    // but nothing in the API says so, and the deref would be a null one.
+    jassert(appProps != nullptr);
+    if (appProps == nullptr)
+        return;
     if (onUpdateAvailable)
         callback = std::move(onUpdateAvailable);
     startThread(juce::Thread::Priority::low);
@@ -72,7 +81,8 @@ void UpdateChecker::run()
     // Save timestamp regardless of result
     if (auto* pf = appProps->getUserSettings())
     {
-        pf->setValue("lastUpdateCheck", (int)(juce::Time::currentTimeMillis() / 1000));
+        pf->setValue("lastUpdateCheck",
+                     juce::String(juce::Time::currentTimeMillis() / 1000));
         pf->saveIfNeeded();
     }
 

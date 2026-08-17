@@ -9,20 +9,7 @@ MainComponent::MainComponent()
 
     // Native menu bar
 #if JUCE_MAC
-    {
-        juce::PopupMenu appleMenu;
-        appleMenu.addItem(idAbout, Strings::get().menuAbout);
-        appleMenu.addItem(idCheckUpdates, Strings::get().menuCheckUpdates);
-        appleMenu.addSeparator();
-
-        juce::PopupMenu langMenu;
-        bool isPt = (Strings::getLanguage() == Language::PT);
-        langMenu.addItem(idLangPT, "PT", true, isPt);
-        langMenu.addItem(idLangEN, "EN", true, !isPt);
-        appleMenu.addSubMenu(Strings::get().menuLanguage, langMenu);
-
-        juce::MenuBarModel::setMacMainMenu(this, &appleMenu);
-    }
+    installMacMenu();
 #elif JUCE_WINDOWS
     menuBarComponent = std::make_unique<juce::MenuBarComponent>(this);
     addAndMakeVisible(menuBarComponent.get());
@@ -204,6 +191,27 @@ void MainComponent::promptForOrphans(juce::Array<juce::File> orphans, int index)
 //==============================================================================
 // Language
 //==============================================================================
+#if JUCE_MAC
+void MainComponent::installMacMenu()
+{
+    // setMacMainMenu copies the extra items, so this has to be rebuilt and
+    // re-installed for the Apple-menu entries to follow a language switch —
+    // menuItemsChanged() only refreshes what getMenuForIndex returns.
+    juce::PopupMenu appleMenu;
+    appleMenu.addItem(idAbout, Strings::get().menuAbout);
+    appleMenu.addItem(idCheckUpdates, Strings::get().menuCheckUpdates);
+    appleMenu.addSeparator();
+
+    juce::PopupMenu langMenu;
+    const bool isPt = (Strings::getLanguage() == Language::PT);
+    langMenu.addItem(idLangPT, "PT", true, isPt);
+    langMenu.addItem(idLangEN, "EN", true, !isPt);
+    appleMenu.addSubMenu(Strings::get().menuLanguage, langMenu);
+
+    juce::MenuBarModel::setMacMainMenu(this, &appleMenu);
+}
+#endif
+
 void MainComponent::applyLanguageChange()
 {
     // One place for every widget that has to be told. The header button and
@@ -216,6 +224,9 @@ void MainComponent::applyLanguageChange()
     outputPanel.updateLanguage();
     dspOverlay.updateLanguage();
     menuItemsChanged();
+#if JUCE_MAC
+    installMacMenu();   // the Apple menu is a copy; rebuild it too
+#endif
     updateAnalyticsContext();   // locale is part of the analytics context
     saveSettings();
 }
@@ -314,7 +325,9 @@ void MainComponent::diskSpaceWarning(int remainingMinutes)
     if (remainingMinutes <= 10 && !diskWarningShown)
     {
         diskWarningShown = true;
-        juce::MessageManager::callAsync([this, remainingMinutes]() {
+        auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag, remainingMinutes]() {
+        if (! aliveFlag->load()) return;
             inlineWarning.show(
                 Strings::get().discoBaixo + juce::String(remainingMinutes) + "min.",
                 InlineWarning::Warning, 0); // no auto-hide during recording
@@ -457,7 +470,10 @@ void MainComponent::askAnalyticsConsentIfNeeded()
     if (analyticsReporter.hasAskedConsent())
         return;
 
-    juce::MessageManager::callAsync([this]() {
+    auto outerAlive = uiAlive;
+    juce::MessageManager::callAsync([this, outerAlive]() {
+        if (! outerAlive->load()) return;
+
         auto opts = juce::MessageBoxOptions()
                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
                         .withTitle(Strings::get().consentTitulo)
@@ -571,8 +587,10 @@ void MainComponent::handleRecordButtonClicked()
 //==============================================================================
 void MainComponent::dspStarted()
 {
-    juce::MessageManager::callAsync([this]()
+    auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag]()
     {
+        if (! aliveFlag->load()) return;
         dspOverlay.show(outputPanel.isNormalizeOn(),
                         outputPanel.isNoiseReductionOn(),
                         outputPanel.isCompressorOn(),
@@ -583,16 +601,20 @@ void MainComponent::dspStarted()
 
 void MainComponent::dspStepChanged(const juce::String& step)
 {
-    juce::MessageManager::callAsync([this, step]()
+    auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag, step]()
     {
+        if (! aliveFlag->load()) return;
         dspOverlay.setCurrentStep(step);
     });
 }
 
 void MainComponent::dspFinished(const juce::File& file)
 {
-    juce::MessageManager::callAsync([this, file]()
+    auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag, file]()
     {
+        if (! aliveFlag->load()) return;
         dspOverlay.hide();
         showTakeResult(file);
         file.revealToUser();
@@ -620,8 +642,10 @@ void MainComponent::dspFinished(const juce::File& file)
 
 void MainComponent::dspError(const juce::String& error)
 {
-    juce::MessageManager::callAsync([this, error]()
+    auto aliveFlag = uiAlive;
+    juce::MessageManager::callAsync([this, aliveFlag, error]()
     {
+        if (! aliveFlag->load()) return;
         dspOverlay.hide();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
             "BDG rec", Strings::get().erroProcessamento + error);

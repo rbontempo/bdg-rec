@@ -5,7 +5,6 @@ HeaderBar::HeaderBar()
 {
     iconImage = juce::ImageCache::getFromMemory(
         BinaryData::iconebdg_png, BinaryData::iconebdg_pngSize);
-    setSize(960, preferredHeight);
 }
 
 void HeaderBar::paint(juce::Graphics& g)

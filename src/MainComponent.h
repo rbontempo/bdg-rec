@@ -62,6 +62,9 @@ private:
     void handleRecordButtonClicked();
     void updateAnalyticsContext();
     void applyLanguageChange();
+#if JUCE_MAC
+    void installMacMenu();
+#endif
     void askAnalyticsConsentIfNeeded();
 
     // Walks the orphan list one dialog at a time. Only the first was ever

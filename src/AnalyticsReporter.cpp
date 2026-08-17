@@ -30,7 +30,10 @@ void AnalyticsReporter::initialise(juce::ApplicationProperties& props, const juc
 {
     appProps = &props;
     apiUrl = analyticsUrl;
-    // Obfuscated API key (XOR 0x5A) — not encryption, just prevents plain-text grep
+    // API key, XOR 0x5A. This is NOT a secret: the bytes and the algorithm are
+    // both in a public repository, so anyone can recover it in seconds. Treat
+    // it as a public app identifier and rely on server-side rate limiting; the
+    // XOR only keeps it from showing up in a plain strings(1) dump.
     static const unsigned char k[] = {
         0x38,0x28,0x3f,0x39,0x05,0x68,0x6b,0x6e,0x3e,0x3b,
         0x3c,0x3e,0x62,0x6e,0x38,0x6f,0x6e,0x6e,0x38,0x6a,
@@ -122,8 +125,7 @@ void AnalyticsReporter::setConsent(bool allowed)
 
 juce::String AnalyticsReporter::generateMachineId()
 {
-    juce::Random rng;
-    int wordIndex = rng.nextInt(NUM_FUNNY_WORDS);
+    int wordIndex = juce::Random::getSystemRandom().nextInt(NUM_FUNNY_WORDS);
     auto uuid = juce::Uuid().toString().removeCharacters("-").substring(0, 8);
     return juce::String(funnyWords[wordIndex]) + "-" + uuid;
 }

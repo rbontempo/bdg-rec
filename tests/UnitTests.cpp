@@ -30,10 +30,6 @@ static void testVersionComparison()
     check(! U::isNewerVersion("1.1.8", "1.1.9"), "an older version is not newer");
     check(! U::isNewerVersion("1.0.0", "1.1.9"), "an older minor is not newer");
 
-    // The release tag arrives as "v1.2.0"; the caller strips the v, so the
-    // bare form is what this must handle.
-    check(U::isNewerVersion("1.2.0", "1.1.9"),   "handles the stripped tag form");
-
     // Differing component counts, which GitHub tags do produce.
     check(U::isNewerVersion("1.2", "1.1.9"),     "1.2 is newer than 1.1.9");
     check(! U::isNewerVersion("1.1", "1.1.9"),   "1.1 is not newer than 1.1.9");

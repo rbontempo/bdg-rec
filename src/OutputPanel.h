@@ -11,11 +11,14 @@ public:
     void resized() override;
     void updateLanguage();
 
-    // Getters for treatment toggles
-    bool isNormalizeOn()       const { return normalizeOn; }
-    bool isNoiseReductionOn()  const { return noiseReductionOn; }
-    bool isCompressorOn()      const { return compressorOn; }
-    bool isDeEsserOn()         const { return deEsserOn; }
+    // Getters for treatment toggles. Read straight from the rows: the panel
+    // used to keep its own copy of each bool and sync it by hand in four
+    // setters plus four callbacks, which is the classic way for a UI and its
+    // state to drift apart.
+    bool isNormalizeOn()       const { return normalizeRow.value; }
+    bool isNoiseReductionOn()  const { return noiseRow.value; }
+    bool isCompressorOn()      const { return compressorRow.value; }
+    bool isDeEsserOn()         const { return deEsserRow.value; }
 
     // Folder getter
     juce::File getDestFolder() const { return destFolder; }
@@ -74,10 +77,6 @@ private:
 
     juce::File   destFolder;
 
-    bool normalizeOn      = false;
-    bool noiseReductionOn = false;
-    bool compressorOn     = false;
-    bool deEsserOn        = false;
 
     void openFolderChooser();
 

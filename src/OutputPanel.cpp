@@ -33,8 +33,12 @@ void OutputPanel::ToggleRow::paint(juce::Graphics& g)
     g.fillEllipse(thumbX, thumbY, thumbDiam, thumbDiam);
 }
 
-void OutputPanel::ToggleRow::mouseUp(const juce::MouseEvent& /*e*/)
+void OutputPanel::ToggleRow::mouseUp(const juce::MouseEvent& e)
 {
+    // Press, drag away, release: that is a cancel, not a toggle.
+    if (! getLocalBounds().contains(e.getPosition()))
+        return;
+
     value = !value;
     repaint();
     if (onToggle) onToggle(value);
@@ -59,22 +63,18 @@ OutputPanel::OutputPanel()
     // Treatment toggles
     normalizeRow.onToggle = [this](bool v)
     {
-        normalizeOn = v;
         if (onSettingsChanged) onSettingsChanged();
     };
     noiseRow.onToggle = [this](bool v)
     {
-        noiseReductionOn = v;
         if (onSettingsChanged) onSettingsChanged();
     };
     compressorRow.onToggle = [this](bool v)
     {
-        compressorOn = v;
         if (onSettingsChanged) onSettingsChanged();
     };
     deEsserRow.onToggle = [this](bool v)
     {
-        deEsserOn = v;
         if (onSettingsChanged) onSettingsChanged();
     };
 
@@ -311,28 +311,24 @@ void OutputPanel::setDestFolder(const juce::File& folder)
 
 void OutputPanel::setNormalize(bool v)
 {
-    normalizeOn = v;
     normalizeRow.value = v;
     normalizeRow.repaint();
 }
 
 void OutputPanel::setNoiseReduction(bool v)
 {
-    noiseReductionOn = v;
     noiseRow.value = v;
     noiseRow.repaint();
 }
 
 void OutputPanel::setCompressor(bool v)
 {
-    compressorOn = v;
     compressorRow.value = v;
     compressorRow.repaint();
 }
 
 void OutputPanel::setDeEsser(bool v)
 {
-    deEsserOn = v;
     deEsserRow.value = v;
     deEsserRow.repaint();
 }

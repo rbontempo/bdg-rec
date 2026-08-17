@@ -59,8 +59,14 @@ void DspOverlay::show(bool normalize, bool noiseReduction, bool compressor, bool
     repaint();
 }
 
+// Message thread only. The `steps` mutation below is unprotected, so calling
+// this from anywhere else is a data race — the callAsync that used to wrap
+// the repaint suggested otherwise, which was the dangerous part. The single
+// caller (MainComponent::dspStepChanged) already marshals to this thread.
 void DspOverlay::setCurrentStep(const juce::String& stepName)
 {
+    JUCE_ASSERT_MESSAGE_THREAD
+
     for (auto& s : steps)
     {
         if (s.state == StepState::Active)
@@ -76,9 +82,7 @@ void DspOverlay::setCurrentStep(const juce::String& stepName)
         }
     }
 
-    auto flag = alive;
-    auto* self = this;
-    juce::MessageManager::callAsync([self, flag]() { if (flag->load()) self->repaint(); });
+    repaint();
 }
 
 void DspOverlay::hide()

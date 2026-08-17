@@ -30,16 +30,6 @@ código recente, num app cujo trabalho é gravar áudio.
 
 ## Corretos hoje, frágeis amanhã
 
-### `uiAlive` aplicado de forma inconsistente
-`MainComponent.cpp` — vários `callAsync` capturam `this` sem o guard
-
-Não é explorável: o `MainComponent` só é destruído em `shutdown()`, depois que
-o message loop parou, então lambdas pendentes nunca executam. Mas o padrão
-está inconsistente com os sites que *receberam* o guard.
-
-**Quando vira bug:** no dia em que o app tiver mais de uma janela, ou em
-qualquer refactor que permita destruir o `MainComponent` com o loop vivo.
-
 ### `contributing == 0` retorna sem contabilizar
 `AudioEngine.cpp`
 
@@ -64,27 +54,9 @@ de outra origem viraria ruído decodificado.
 
 **Quando fazer:** se o app algum dia gravar em outro formato.
 
-### `UpdateChecker`: `appProps` sem null-check e timestamp de 32 bits
-`UpdateChecker.cpp`
-
-`forceCheck()` pode iniciar a thread sem `checkIfDue()` ter rodado, e aí
-`appProps` seria nulo. Hoje o construtor do `MainComponent` sempre chama
-`checkIfDue` antes, então não acontece — mas é granada de refactor. E
-`lastUpdateCheck` é gravado como `int` de segundos, que estoura em 2038.
-
 ---
 
 ## Cosméticos e estruturais
-
-### Menu do Apple não troca de idioma
-`MainComponent.cpp`
-
-"Sobre o BDG rec", "Buscar atualizações..." e "Idioma" vivem na cópia do
-`PopupMenu` passada a `setMacMainMenu` no construtor. `applyLanguageChange()`
-não reconstrói essa cópia, então ficam no idioma do startup até reiniciar.
-Pré-existente. Corrigir chamando `setMacMainMenu` de novo com o menu
-reconstruído — foi por causa desse congelamento que o toggle de analytics foi
-parar no menu Ajuda.
 
 ### `MainComponent` ainda concentra papéis
 `MainComponent.cpp`
@@ -98,37 +70,6 @@ Extrações com retorno claro, se voltar a crescer: `SettingsStore`
 `RecordingController` (validações e regra de espaço em disco, que ficariam
 testáveis).
 
-### `ToggleRow` com estado duplicado
-`OutputPanel.h` / `.cpp`
-
-`normalizeOn` no painel e `normalizeRow.value` no filho guardam o mesmo bool,
-sincronizados à mão em quatro setters. Fonte clássica de dessincronização.
-Uma fonte de verdade (o row) com getter no painel resolve. Além disso,
-`ToggleRow::mouseUp` não checa `contains(e.getPosition())`, então arrastar
-para fora e soltar ainda alterna — o `RecordButton` faz essa checagem.
-
-### `DspOverlay::setCurrentStep` com proteção redundante
-`DspOverlay.cpp`
-
-Tem `shared_ptr<atomic<bool>>` + `callAsync` interno, mas o único chamador já
-faz `callAsync`. A camada extra sugere que o método é seguro para chamar de
-qualquer thread, o que não é — a mutação de `steps` não é protegida.
-Simplificar e documentar "message thread only".
-
-### Chave de API "ofuscada" com XOR
-`AnalyticsReporter.cpp`
-
-Os bytes e o algoritmo estão no repositório público. O comentário
-`"prevents plain-text grep"` promete uma proteção que não existe. Tratar como
-identificador público e proteger o servidor com rate-limit; o comentário
-deveria dizer isso.
-
-### Miudezas
-- `HeaderBar.cpp`: `setSize()` no construtor é inútil — o pai chama `setBounds`.
-- `AnalyticsReporter.cpp`: `juce::Random` local por chamada funciona, mas
-  `juce::Random::getSystemRandom()` é o idiomático.
-- `UnitTests.cpp`: uma asserção de `isNewerVersion` repete outra.
-
 ---
 
 ## Ferramentas não adotadas
@@ -136,8 +77,7 @@ deveria dizer isso.
 **LTO/IPO em Release** — `CheckIPOSupported` + `CMAKE_INTERPROCEDURAL_OPTIMIZATION`.
 Binário menor e mais rápido, custo de build maior.
 
-**clang-tidy** — o `.clang-format` foi adicionado; o tidy não. Pegaria parte
-desta lista automaticamente.
+**clang-tidy** — o `.clang-format` foi adicionado; o tidy não.
 
 **Assinatura e notarização** — o app sai com assinatura ad-hoc. Notarizar
 custa US$ 99/ano e elimina o atrito de instalação no macOS de vez. No Windows
@@ -151,3 +91,23 @@ não há saída barata: o Azure Artifact Signing não atende o Brasil.
 `build-*/`, com barra, que só casa diretórios; `build-macos.sh` e
 `build-windows.bat` nunca estiveram sendo ignorados. Verificado com
 `git check-ignore -v`.
+
+---
+
+## Corrigido depois desta lista ter sido escrita
+
+Ficam registrados porque a lista original os classificava como aceitáveis, e
+o uso real mostrou o contrário:
+
+- **`InlineWarning` com countdown residual** — era "cosmético" até derrubar o
+  aviso de amostras perdidas, que precisa ficar na tela.
+- **Permissão da pasta pedida 4× no startup** — não estava nesta lista porque
+  nenhuma auditoria de leitura o encontrou. Só apareceu abrindo o app com o
+  TCC limpo.
+- **Waveform em escala linear** e **`0` da régua cortado** — mesma causa raiz
+  (amplitude linear onde precisava ser dB), em dois lugares. A escala agora
+  vive em `src/LevelScale.h`, compartilhada, e há teste de render que reprova
+  se voltar.
+- `uiAlive` inconsistente, `UpdateChecker` (null-check e Y2038), menu do Apple
+  sem troca de idioma, `ToggleRow` com estado duplicado, `DspOverlay` com
+  proteção redundante, comentário enganoso da chave XOR e as miudezas.
