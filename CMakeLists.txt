@@ -8,7 +8,7 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
-project(BDG_REC VERSION 1.1.10 LANGUAGES C CXX)
+project(BDG_REC VERSION 1.1.11 LANGUAGES C CXX)
 
 # Link the MSVC runtime statically so the .exe does not need the Visual C++
 # Redistributable installed. Without this, a clean Windows machine greets the
