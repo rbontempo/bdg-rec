@@ -50,6 +50,11 @@ private:
 
     static constexpr int BATCH_INTERVAL_MS = 30000;
     static constexpr int MAX_BATCH_INTERVAL_MS = 480000; // 8 min max backoff
+    // 30s << 4 == 8 min, i.e. the cap above. Without this ceiling the shift
+    // overflows int after ~17 failures (roughly 2 h offline), which is
+    // undefined behaviour and in practice yields a negative interval —
+    // wait() then blocks forever and the reporter never sends again.
+    static constexpr int MAX_BACKOFF_SHIFT = 4;
     static constexpr int MAX_QUEUE_SIZE = 500;
     int currentIntervalMs = BATCH_INTERVAL_MS;
     int consecutiveFailures = 0;

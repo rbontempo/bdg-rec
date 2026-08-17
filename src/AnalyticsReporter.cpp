@@ -198,7 +198,7 @@ void AnalyticsReporter::sendBatch()
         juce::ScopedLock lock(queueLock);
         for (auto& evt : batch)
             eventQueue.add(evt);
-        consecutiveFailures++;
+        consecutiveFailures = juce::jmin(consecutiveFailures + 1, MAX_BACKOFF_SHIFT);
         currentIntervalMs = juce::jmin(BATCH_INTERVAL_MS * (1 << consecutiveFailures), MAX_BATCH_INTERVAL_MS);
         return;
     }
@@ -210,7 +210,7 @@ void AnalyticsReporter::sendBatch()
         juce::ScopedLock lock(queueLock);
         for (auto& evt : batch)
             eventQueue.add(evt);
-        consecutiveFailures++;
+        consecutiveFailures = juce::jmin(consecutiveFailures + 1, MAX_BACKOFF_SHIFT);
         currentIntervalMs = juce::jmin(BATCH_INTERVAL_MS * (1 << consecutiveFailures), MAX_BATCH_INTERVAL_MS);
     }
     else

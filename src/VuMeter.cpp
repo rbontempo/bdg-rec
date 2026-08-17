@@ -3,15 +3,24 @@
 
 VuMeter::VuMeter() {}
 
-// Convert linear RMS (0-1) to a 0-1 display value using dB scale.
-// Maps -60 dB → 0.0, 0 dB → 1.0
+static constexpr float kMinDb = -60.0f;
+
+// Single source of truth for the meter's scale: -60 dB at the left edge,
+// 0 dB at the right. The bar fill and the tick marks must both come from
+// here. They used to use different mappings — the bar was in dB while the
+// labels were positioned by linear amplitude — so a -12 dB signal filled
+// 80% of the bar while the "-12" label sat at 25% of the width.
+static float dbToDisplay(float db)
+{
+    if (db <= kMinDb) return 0.0f;
+    return (db - kMinDb) / -kMinDb; // normalize to 0-1
+}
+
+// Convert linear RMS (0-1) to a 0-1 display value using the dB scale above.
 static float rmsToDisplay(float rms)
 {
     if (rms <= 0.0f) return 0.0f;
-    const float minDb = -60.0f;
-    float db = 20.0f * std::log10(rms);
-    if (db <= minDb) return 0.0f;
-    return (db - minDb) / -minDb; // normalize to 0-1
+    return dbToDisplay(20.0f * std::log10(rms));
 }
 
 void VuMeter::setLevels(float l, float r)
@@ -95,13 +104,10 @@ void VuMeter::paint(juce::Graphics& g)
     // Scale labels below both bars
     const float scaleY = rowR + barH + 3.0f;
 
-    // dB positions: -24, -12, -9, -6, -3, 0
-    // Map dB to linear 0-1 using simple linear scale relative to 0 dB
-    // We use a linear mapping where 0 dB = 1.0 and -24 dB proportionally.
-    // Since bars are linear amplitude, map dB: amplitude = 10^(dB/20)
-    // But for display labels we just evenly space them across the bar.
-    // Labels: -24, -12, -9, -6, -3, 0
-    const int dbValues[]    = {-24, -12, -9, -6, -3, 0};
+    // Chosen to sit evenly along the -60..0 dB scale the bar actually uses.
+    // For reference, the colour zones land at -15 dB (green→yellow, 75%)
+    // and -7.5 dB (yellow→red, 87.5%).
+    const int dbValues[]    = {-48, -36, -24, -12, -6, 0};
     const int numLabels     = 6;
 
     g.setFont(juce::FontOptions().withHeight(8.0f));
@@ -109,9 +115,8 @@ void VuMeter::paint(juce::Graphics& g)
 
     for (int i = 0; i < numLabels; ++i)
     {
-        // Amplitude = 10^(dB/20), linear position on bar
-        float amp = std::pow(10.0f, dbValues[i] / 20.0f);
-        float xPos = barX + amp * barW;
+        // Same mapping the bar fill uses, so label and level agree.
+        const float xPos = barX + dbToDisplay((float) dbValues[i]) * barW;
 
         juce::String label = (dbValues[i] == 0) ? "0" : juce::String(dbValues[i]);
 
@@ -123,7 +128,7 @@ void VuMeter::paint(juce::Graphics& g)
 
         // Tick mark
         g.setColour(juce::Colour(0x20ffffff));
-        g.drawVerticalLine((int)(barX + amp * barW), scaleY - 2.0f, scaleY);
+        g.drawVerticalLine((int) xPos, scaleY - 2.0f, scaleY);
         g.setColour(juce::Colour(0x40ffffff));
     }
 }
