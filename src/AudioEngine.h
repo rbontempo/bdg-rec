@@ -10,6 +10,16 @@ class AudioEngine : public juce::AudioIODeviceCallback,
                     public juce::Timer
 {
 public:
+    // Why a recording ended. Carried through to the listener so the UI can say
+    // the right thing without each stop path inventing its own notification.
+    enum class StopReason
+    {
+        UserRequested,
+        DiskFull,
+        DeviceLost,
+        DeviceRateChanged
+    };
+
     //==============================================================================
     class Listener
     {
@@ -24,14 +34,14 @@ public:
         virtual void devicesChanged() {}
         // Task 2: disk space monitoring
         virtual void diskSpaceWarning(int remainingMinutes) {}
-        virtual void recordingAutoStopped() {}
+        // The take was merged and written successfully. Always delivered on
+        // the message thread, possibly a while after the stop was requested —
+        // merging a long recording takes time and now runs in the background.
+        virtual void recordingFinished(const juce::File& file, StopReason reason) {}
         // Concatenation failed (usually a full disk). The raw chunks were NOT
         // deleted — they stay in this folder and the orphan-recovery flow can
         // pick them up on the next launch.
         virtual void recordingSaveFailed(const juce::File& preservedChunkFolder) {}
-        // Recording ended because the device reopened at a different sample
-        // rate. Everything captured up to that point is in `saved`.
-        virtual void recordingStoppedDeviceChanged(const juce::File& saved) {}
     };
 
     //==============================================================================
@@ -72,7 +82,17 @@ public:
     //==============================================================================
     // Recording pipeline
     bool        startRecording(const juce::File& destFolder);
+
+    // Stops and merges in the background; the result arrives via
+    // Listener::recordingFinished or Listener::recordingSaveFailed. This is
+    // what the UI should call.
+    void        stopRecordingAsync(StopReason reason);
+
+    // Blocking variant: stops and merges inline, returning the finished file
+    // (or an empty File on failure). Only for shutdown and tests — merging a
+    // long take here will block the calling thread for as long as it takes.
     juce::File  stopRecording();
+
     bool        isRecording() const;
 
     // Samples the write path could not accept during the last take (disk
@@ -185,6 +205,44 @@ private:
 
     bool openNextChunk();
     ConcatResult concatenateChunks();
+
+    // The two halves of stopping: finishWriting() is fast (closes the writer),
+    // finaliseSave() is the expensive merge.
+    bool finishWriting();
+    juce::File finaliseSave();
+
+    // Runs finaliseSave() off the message thread and reports back on it.
+    class SaveThread : public juce::Thread
+    {
+    public:
+        SaveThread(AudioEngine& e, StopReason r)
+            : juce::Thread("BDG Save"), engine(e), reason(r) {}
+
+        void run() override
+        {
+            auto file = engine.finaliseSave();
+            auto aliveFlag = engine.alive;
+            auto* eng = &engine;
+            const auto why = reason;
+
+            if (file == juce::File())
+                return;   // finaliseSave() already reported the failure
+
+            juce::MessageManager::callAsync([eng, aliveFlag, file, why]()
+            {
+                // Qualified: juce::Thread also has a nested Listener, and
+                // inside this class that one wins name lookup.
+                if (aliveFlag->load())
+                    eng->listeners.call(&AudioEngine::Listener::recordingFinished, file, why);
+            });
+        }
+
+    private:
+        AudioEngine& engine;
+        StopReason reason;
+    };
+
+    std::unique_ptr<SaveThread> saveThread;
 
     //==============================================================================
     // DSP background thread

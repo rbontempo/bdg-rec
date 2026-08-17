@@ -30,9 +30,8 @@ public:
     void dspError(const juce::String& error) override;
     void devicesChanged() override; // Task 19
     void diskSpaceWarning(int remainingMinutes) override; // Task 2
-    void recordingAutoStopped() override; // Task 2
+    void recordingFinished(const juce::File& file, AudioEngine::StopReason reason) override;
     void recordingSaveFailed(const juce::File& preservedChunkFolder) override;
-    void recordingStoppedDeviceChanged(const juce::File& saved) override;
 
 private:
     BdgLookAndFeel bdgLookAndFeel;

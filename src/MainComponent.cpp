@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "Strings.h"
 #include "BinaryData.h"
+#include "BdgDialog.h"
 
 MainComponent::MainComponent()
 {
@@ -283,25 +284,12 @@ void MainComponent::diskSpaceWarning(int remainingMinutes)
     }
 }
 
-void MainComponent::recordingAutoStopped()
-{
-    auto aliveFlag = uiAlive;
-    juce::MessageManager::callAsync([this, aliveFlag]() {
-        if (! aliveFlag->load()) return;
-        isRecording = false;
-        inputPanel.setRecordingActive(false);
-        recordingPanel.stopRecording();
-        inlineWarning.hide();
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG rec", Strings::get().gravacaoParadaDisco);
-    });
-}
-
 void MainComponent::recordingSaveFailed(const juce::File& preservedChunkFolder)
 {
     auto aliveFlag = uiAlive;
     juce::MessageManager::callAsync([this, aliveFlag, preservedChunkFolder]() {
         if (! aliveFlag->load()) return;
+
         isRecording = false;
         inputPanel.setRecordingActive(false);
         recordingPanel.stopRecording();
@@ -322,27 +310,89 @@ void MainComponent::recordingSaveFailed(const juce::File& preservedChunkFolder)
     });
 }
 
-void MainComponent::recordingStoppedDeviceChanged(const juce::File& saved)
+void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopReason reason)
 {
     auto aliveFlag = uiAlive;
-    juce::MessageManager::callAsync([this, aliveFlag, saved]() {
+    juce::MessageManager::callAsync([this, aliveFlag, file, reason]() {
         if (! aliveFlag->load()) return;
+
         isRecording = false;
         inputPanel.setRecordingActive(false);
         recordingPanel.stopRecording();
         inlineWarning.hide();
 
-        analyticsReporter.trackEvent("error", [&]() {
+        // Everything the four stop paths used to duplicate now lives here,
+        // keyed on why the recording ended.
+        switch (reason)
+        {
+            case AudioEngine::StopReason::DiskFull:
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "BDG rec", Strings::get().gravacaoParadaDisco);
+                break;
+
+            case AudioEngine::StopReason::DeviceLost:
+                analyticsReporter.trackEvent("error", [&]() {
+                    auto extra = new juce::DynamicObject();
+                    extra->setProperty("error_code", "device_lost");
+                    extra->setProperty("message", "Device disconnected during recording");
+                    return juce::var(extra);
+                }());
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "BDG rec", Strings::get().dispositivoDesconectado);
+                break;
+
+            case AudioEngine::StopReason::DeviceRateChanged:
+                analyticsReporter.trackEvent("error", [&]() {
+                    auto extra = new juce::DynamicObject();
+                    extra->setProperty("error_code", "device_rate_changed");
+                    extra->setProperty("message", "Device reopened at a different sample rate");
+                    return juce::var(extra);
+                }());
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "BDG rec", Strings::get().gravacaoParadaDispositivo);
+                break;
+
+            case AudioEngine::StopReason::UserRequested:
+                break;
+        }
+
+        lastRecordedFile = file;
+
+        analyticsReporter.trackEvent("recording_end", [&]() {
             auto extra = new juce::DynamicObject();
-            extra->setProperty("error_code", "device_rate_changed");
-            extra->setProperty("message", "Device reopened at a different sample rate");
+            extra->setProperty("duration_seconds", recordingPanel.getElapsedSeconds());
             return juce::var(extra);
         }());
 
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG rec", Strings::get().gravacaoParadaDispositivo);
+        // Treatments only run for a normal stop; an interrupted take is handed
+        // over as-is so the user still gets the audio.
+        const bool doNorm  = outputPanel.isNormalizeOn();
+        const bool doNoise = outputPanel.isNoiseReductionOn();
+        const bool doComp  = outputPanel.isCompressorOn();
+        const bool doDeEss = outputPanel.isDeEsserOn();
 
-        saved.revealToUser();
+        if (reason == AudioEngine::StopReason::UserRequested
+            && (doNorm || doNoise || doComp || doDeEss))
+        {
+            // No try/catch here: processRecording() only spawns the DSP thread,
+            // and an exception thrown on that thread cannot travel back to this
+            // call site. The guard that actually catches it lives inside
+            // DspThread::run(), and failures arrive through dspError().
+            audioEngine.processRecording(file, doNorm, doNoise, doComp, doDeEss);
+        }
+        else
+        {
+            inlineWarning.show(
+                Strings::get().salvoNaPasta + file.getParentDirectory().getFileName(),
+                InlineWarning::Info);
+            file.revealToUser();
+
+            analyticsReporter.trackEvent("export_complete", [&]() {
+                auto extra = new juce::DynamicObject();
+                extra->setProperty("file_size_mb", (double) file.getSize() / (1024.0 * 1024.0));
+                return juce::var(extra);
+            }());
+        }
     });
 }
 
@@ -455,48 +505,11 @@ void MainComponent::handleRecordButtonClicked()
     }
     else
     {
-        // Stop recording
-        lastRecordedFile = audioEngine.stopRecording();
-        isRecording = false;
-        inputPanel.setRecordingActive(false);
-
-        // Track recording end
-        {
-            auto extra = new juce::DynamicObject();
-            extra->setProperty("duration_seconds", recordingPanel.getElapsedSeconds());
-            analyticsReporter.trackEvent("recording_end", juce::var(extra));
-        }
-
+        // Fire and forget: merging the chunks can take a while on a long take,
+        // so it runs in the background and everything that follows a stop is
+        // handled in recordingFinished().
+        audioEngine.stopRecordingAsync(AudioEngine::StopReason::UserRequested);
         recordingPanel.stopRecording();
-
-        // Run DSP if any treatment is enabled
-        bool doNorm  = outputPanel.isNormalizeOn();
-        bool doNoise = outputPanel.isNoiseReductionOn();
-        bool doComp  = outputPanel.isCompressorOn();
-        bool doDeEss = outputPanel.isDeEsserOn();
-
-        if ((doNorm || doNoise || doComp || doDeEss) && lastRecordedFile.existsAsFile())
-        {
-            // No try/catch here: processRecording() only spawns the DSP thread,
-            // and an exception thrown on that thread cannot travel back to this
-            // call site. The guard that actually catches it lives inside
-            // DspThread::run(), and failures arrive through dspError().
-            audioEngine.processRecording(lastRecordedFile, doNorm, doNoise, doComp, doDeEss);
-        }
-        else if (lastRecordedFile.existsAsFile())
-        {
-            // No processing — report success inline
-            inlineWarning.show(
-                Strings::get().salvoNaPasta + lastRecordedFile.getParentDirectory().getFileName(), InlineWarning::Info);
-            lastRecordedFile.revealToUser();
-
-            // Track export complete (no DSP)
-            {
-                auto extra = new juce::DynamicObject();
-                extra->setProperty("file_size_mb", (double)lastRecordedFile.getSize() / (1024.0 * 1024.0));
-                analyticsReporter.trackEvent("export_complete", juce::var(extra));
-            }
-        }
     }
 }
 
@@ -619,59 +632,11 @@ void MainComponent::showUpdateDialog(const juce::String& newVersion)
                     .replace("%NEW%", newVersion, false)
                     .replace("%CUR%", currentVersion, false);
 
-    auto* window = new juce::DialogWindow::LaunchOptions();
-    auto* content = new juce::Component();
-    content->setSize(320, 280);
-
-    // Logo
-    auto logo = juce::ImageCache::getFromMemory(
-        BinaryData::logobdgrec_png, BinaryData::logobdgrec_pngSize);
-    auto* logoComp = new juce::ImageComponent();
-    logoComp->setImage(logo, juce::RectanglePlacement::centred);
-    logoComp->setBounds(60, 20, 200, 80);
-    content->addAndMakeVisible(logoComp);
-
-    // Message
-    auto* msgLabel = new juce::Label("msg", body);
-    msgLabel->setFont(juce::FontOptions().withHeight(14.0f));
-    msgLabel->setColour(juce::Label::textColourId, BdgColours::textPrimary);
-    msgLabel->setJustificationType(juce::Justification::centred);
-    msgLabel->setBounds(20, 115, 280, 60);
-    content->addAndMakeVisible(msgLabel);
-
-    // Download button
-    auto* downloadBtn = new juce::TextButton(s.updateDownload);
-    downloadBtn->setColour(juce::TextButton::buttonColourId, BdgColours::primary);
-    downloadBtn->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    downloadBtn->setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    downloadBtn->setBounds(40, 195, 110, 30);
-    downloadBtn->onClick = [downloadBtn]() {
-        juce::URL("https://rec.bdg.fm").launchInDefaultBrowser();
-        if (auto* dw = downloadBtn->findParentComponentOfClass<juce::DialogWindow>())
-            dw->closeButtonPressed();
-    };
-    content->addAndMakeVisible(downloadBtn);
-
-    // Ignore button
-    auto* ignoreBtn = new juce::TextButton(s.updateIgnore);
-    ignoreBtn->setColour(juce::TextButton::buttonColourId, BdgColours::bgInput);
-    ignoreBtn->setColour(juce::TextButton::textColourOffId, BdgColours::textPrimary);
-    ignoreBtn->setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    ignoreBtn->setBounds(170, 195, 110, 30);
-    ignoreBtn->onClick = [ignoreBtn]() {
-        if (auto* dw = ignoreBtn->findParentComponentOfClass<juce::DialogWindow>())
-            dw->closeButtonPressed();
-    };
-    content->addAndMakeVisible(ignoreBtn);
-
-    window->content.setOwned(content);
-    window->dialogTitle = s.updateAvailableTitle;
-    window->dialogBackgroundColour = BdgColours::bgPanel;
-    window->escapeKeyTriggersCloseButton = true;
-    window->useNativeTitleBar = true;
-    window->resizable = false;
-
-    window->launchAsync();
+    BdgDialogContent::launch(s.updateAvailableTitle,
+        new BdgDialogContent({}, body, {
+            { s.updateDownload, true,  []() { juce::URL("https://rec.bdg.fm").launchInDefaultBrowser(); } },
+            { s.updateIgnore,   false, {} },
+        }));
 }
 
 //==============================================================================
@@ -772,56 +737,9 @@ void MainComponent::menuItemSelected(int menuItemID, int)
 void MainComponent::showAboutDialog()
 {
     auto& s = Strings::get();
-    auto version = juce::String("v") + JUCE_APPLICATION_VERSION_STRING;
 
-    auto* window = new juce::DialogWindow::LaunchOptions();
-
-    auto* content = new juce::Component();
-    content->setSize(320, 280);
-
-    // Logo
-    auto logo = juce::ImageCache::getFromMemory(
-        BinaryData::logobdgrec_png, BinaryData::logobdgrec_pngSize);
-
-    auto* logoComp = new juce::ImageComponent();
-    logoComp->setImage(logo, juce::RectanglePlacement::centred);
-    logoComp->setBounds(60, 20, 200, 80);
-    content->addAndMakeVisible(logoComp);
-
-    // Version
-    auto* versionLabel = new juce::Label("version", version);
-    versionLabel->setFont(juce::FontOptions().withHeight(13.0f));
-    versionLabel->setColour(juce::Label::textColourId, BdgColours::textMuted);
-    versionLabel->setJustificationType(juce::Justification::centred);
-    versionLabel->setBounds(0, 108, 320, 20);
-    content->addAndMakeVisible(versionLabel);
-
-    // Description
-    auto* descLabel = new juce::Label("desc", s.aboutBody);
-    descLabel->setFont(juce::FontOptions().withHeight(13.0f));
-    descLabel->setColour(juce::Label::textColourId, BdgColours::textPrimary);
-    descLabel->setJustificationType(juce::Justification::centred);
-    descLabel->setBounds(20, 135, 280, 80);
-    content->addAndMakeVisible(descLabel);
-
-    // OK button
-    auto* okBtn = new juce::TextButton("OK");
-    okBtn->setColour(juce::TextButton::buttonColourId, BdgColours::primary);
-    okBtn->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    okBtn->setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    okBtn->setBounds(110, 230, 100, 30);
-    okBtn->onClick = [okBtn]() {
-        if (auto* dw = okBtn->findParentComponentOfClass<juce::DialogWindow>())
-            dw->closeButtonPressed();
-    };
-    content->addAndMakeVisible(okBtn);
-
-    window->content.setOwned(content);
-    window->dialogTitle = s.menuAbout;
-    window->dialogBackgroundColour = BdgColours::bgPanel;
-    window->escapeKeyTriggersCloseButton = true;
-    window->useNativeTitleBar = true;
-    window->resizable = false;
-
-    window->launchAsync();
+    BdgDialogContent::launch(s.menuAbout,
+        new BdgDialogContent(juce::String("v") + JUCE_APPLICATION_VERSION_STRING,
+                             s.aboutBody,
+                             { { "OK", true, {} } }));
 }

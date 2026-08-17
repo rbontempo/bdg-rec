@@ -23,9 +23,16 @@ AudioEngine::~AudioEngine()
         dspThread.reset();
     }
 
-    // Stop recording if active
+    // Stop recording if active. Blocking on purpose: the app is going away,
+    // so the merge has to finish here rather than on a background thread.
     if (recording.load())
         stopRecording();
+
+    if (saveThread != nullptr)
+    {
+        saveThread->stopThread(60000);
+        saveThread.reset();
+    }
 
     // Unregister callbacks before destruction
     deviceManager.removeChangeListener(this);
@@ -203,9 +210,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
                 if (! aliveFlag->load() || ! recording.load())
                     return;
 
-                auto saved = stopRecording();
-                if (saved != juce::File())
-                    listeners.call(&Listener::recordingStoppedDeviceChanged, saved);
+                stopRecordingAsync(StopReason::DeviceRateChanged);
             });
 
             // Leave nativeSampleRate alone: concatenateChunks() writes the
@@ -386,11 +391,7 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
     // reported that through recordingSaveFailed and we stay quiet here rather
     // than stacking a second dialog on top.
     if (recording.load() && deviceManager.getCurrentAudioDevice() == nullptr)
-    {
-        auto saved = stopRecording();
-        if (saved != juce::File())
-            listeners.call(&Listener::recordingStoppedDeviceChanged, saved);
-    }
+        stopRecordingAsync(StopReason::DeviceLost);
 
     // Notify all listeners so UI can refresh device list
     listeners.call(&Listener::devicesChanged);
@@ -657,7 +658,7 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks()
     return result;
 }
 
-juce::File AudioEngine::stopRecording()
+bool AudioEngine::finishWriting()
 {
     stopTimer();
 
@@ -666,7 +667,7 @@ juce::File AudioEngine::stopRecording()
     // concatenation against an already-deleted chunk folder and write an empty
     // 44-byte WAV straight over the good recording.
     if (! recording.exchange(false))
-        return {};
+        return false;
 
     // Flush and close current chunk under writer lock
     {
@@ -681,10 +682,14 @@ juce::File AudioEngine::stopRecording()
     }
 
     if (droppedSamples.load() > 0)
-        DBG("  stopRecording: WARNING " + juce::String(droppedSamples.load())
+        DBG("  finishWriting: WARNING " + juce::String(droppedSamples.load())
             + " samples were dropped by the write path");
 
-    // Concatenate all chunks into final file
+    return true;
+}
+
+juce::File AudioEngine::finaliseSave()
+{
     auto result = concatenateChunks();
 
     if (result.ok)
@@ -697,11 +702,39 @@ juce::File AudioEngine::stopRecording()
     // the only intact copy of the audio, so they stay put; findOrphanedRecordings
     // picks them up next launch. Drop the truncated output so it can't be
     // mistaken for a finished recording.
-    DBG("  stopRecording: concat failed, PRESERVING chunks at " + chunkFolder.getFullPathName());
+    DBG("  finaliseSave: concat failed, PRESERVING chunks at " + chunkFolder.getFullPathName());
     result.file.deleteFile();
-    listeners.call(&Listener::recordingSaveFailed, chunkFolder);
+
+    auto folder = chunkFolder;
+    auto aliveFlag = alive;
+    juce::MessageManager::callAsync([this, aliveFlag, folder]()
+    {
+        if (aliveFlag->load())
+            listeners.call(&Listener::recordingSaveFailed, folder);
+    });
 
     return {};
+}
+
+juce::File AudioEngine::stopRecording()
+{
+    if (! finishWriting())
+        return {};
+
+    return finaliseSave();
+}
+
+void AudioEngine::stopRecordingAsync(StopReason reason)
+{
+    if (! finishWriting())
+        return;
+
+    // Merging the chunks reads and rewrites the entire take — around 2 GB for
+    // a two-hour session. Doing that on the message thread froze the app for
+    // as long as the copy took, and a user who force-quits a beachballed app
+    // mid-merge is exactly how recordings used to disappear.
+    saveThread = std::make_unique<SaveThread>(*this, reason);
+    saveThread->startThread();
 }
 
 bool AudioEngine::isRecording() const
@@ -726,8 +759,7 @@ void AudioEngine::timerCallback()
         if (! openNextChunk())
         {
             DBG("  chunk rotation failed — stopping recording");
-            if (stopRecording() != juce::File())
-                listeners.call(&Listener::recordingAutoStopped);
+            stopRecordingAsync(StopReason::DiskFull);
             return;
         }
     }
@@ -753,13 +785,7 @@ void AudioEngine::timerCallback()
         juce::MessageManager::callAsync([this, aliveFlag]() {
             if (!aliveFlag->load()) return;
             if (recording.load())
-            {
-                // If the save itself failed, stopRecording() already told the
-                // listeners via recordingSaveFailed — don't stack a second
-                // dialog on top of it.
-                if (stopRecording() != juce::File())
-                    listeners.call(&Listener::recordingAutoStopped);
-            }
+                stopRecordingAsync(StopReason::DiskFull);
         });
     }
 }
