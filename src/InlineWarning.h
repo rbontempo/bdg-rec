@@ -24,8 +24,10 @@ public:
         alpha = 1.0f;
         fading = false;
         stopTimer();
-        if (autoHideMs > 0)
-            autoHideCountdown = autoHideMs;
+        // Unconditional: writing this only when autoHideMs > 0 left the
+        // countdown of a previous message in place, so a warning asked to stay
+        // on screen (autoHideMs == 0) inherited it and faded out on its own.
+        autoHideCountdown = juce::jmax(0, autoHideMs);
 
         // Derive title from level (bilingual)
         bool isEN = Strings::getLanguage() == Language::EN;

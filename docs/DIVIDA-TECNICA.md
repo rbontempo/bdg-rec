@@ -115,13 +115,6 @@ faz `callAsync`. A camada extra sugere que o método é seguro para chamar de
 qualquer thread, o que não é — a mutação de `steps` não é protegida.
 Simplificar e documentar "message thread only".
 
-### `InlineWarning` herda countdown residual
-`InlineWarning.h`
-
-`if (autoHideMs > 0) autoHideCountdown = autoHideMs;` — um aviso persistente
-(`autoHideMs == 0`) exibido enquanto um anterior de 5 s ainda conta herda o
-countdown antigo e some sozinho. Correção: atribuir incondicionalmente.
-
 ### Chave de API "ofuscada" com XOR
 `AnalyticsReporter.cpp`
 

@@ -616,6 +616,12 @@ void MainComponent::dspError(const juce::String& error)
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
             "BDG rec", Strings::get().erroProcessamento + error);
 
+        // The take itself survived — the DSP works on a copy and only replaces
+        // the original on success. Say where it is, and do not swallow the
+        // dropped-samples warning just because the processing failed.
+        if (lastRecordedFile.existsAsFile())
+            showTakeResult(lastRecordedFile);
+
         analyticsReporter.trackEvent("error", [&]() {
             auto extra = new juce::DynamicObject();
             extra->setProperty("error_code", "dsp_crash");
