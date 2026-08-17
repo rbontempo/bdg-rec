@@ -21,6 +21,9 @@ ctest --test-dir build -L unit
   falharia numa comparação de string)
 - integridade das duas tabelas de idioma: nenhum campo vazio, e os tokens
   `%NEW%`/`%CUR%` preservados
+- DSP: normalize (teto de ganho, limiter), noiseReduce nos dois caminhos de
+  taxa, compressor e de-esser
+- render: desenha o VU meter e o waveform fora da tela e inspeciona os pixels
 
 **`device`** — gravam alguns segundos do microfone padrão. Só rodam numa
 máquina com entrada de áudio e permissão concedida; um runner de CI não tem
@@ -39,6 +42,16 @@ ctest --test-dir build -L device
 
 Os testes de dispositivo usam `BDG_CHUNK_SECONDS=2.0` para exercitar em
 segundos um caminho que em produção leva 5 minutos por fronteira.
+
+## Por que existe um teste de render
+
+Três rodadas de code review leram o `VuMeter` e o `WaveformDisplay` e não
+pegaram dois defeitos reais: o waveform desenhava amplitude linear (fala
+normal virava uma linha pontilhada de 2px) e o "0" da régua era cortado pela
+borda. Leitura pega lógica; escala e layout só aparecem olhando a saída.
+
+O `RenderTest` desenha os componentes num `juce::Image` e mede os pixels.
+Verificado que ele reprova quando os dois bugs são reintroduzidos.
 
 ## DiskFullTest
 

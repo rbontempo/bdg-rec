@@ -59,7 +59,7 @@ jobs:
       - name: Build tests
         run: >
           cmake --build build --config Release
-          --target BDG_UnitTests BDG_DspTests
+          --target BDG_UnitTests BDG_DspTests BDG_RenderTests
           BDG_RotationTest BDG_SampleRateTest BDG_EmptyTakeTest
           BDG_RecoveryTest BDG_DiskFullTest
 

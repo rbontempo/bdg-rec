@@ -71,6 +71,42 @@ target_link_libraries(BDG_DspTests PRIVATE
 add_test(NAME unit.dsp COMMAND BDG_DspTests)
 set_tests_properties(unit.dsp PROPERTIES LABELS "unit" TIMEOUT 120)
 
+# Renders the level widgets offscreen and inspects the pixels. Catches the
+# class of bug that reading the code does not: wrong scale, clipped layout.
+juce_add_console_app(BDG_RenderTests PRODUCT_NAME "BDG_RenderTests")
+
+target_sources(BDG_RenderTests PRIVATE
+    RenderTest.cpp
+    ${SRC_DIR}/VuMeter.cpp
+    ${SRC_DIR}/WaveformDisplay.cpp
+)
+
+juce_add_binary_data(BDG_RenderTests_Data SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../resources/logo-bdg-rec.png
+    ${CMAKE_CURRENT_SOURCE_DIR}/../resources/icone-bdg.png
+)
+
+target_compile_definitions(BDG_RenderTests PRIVATE
+    JUCE_STANDALONE_APPLICATION=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_APPLICATION_NAME_STRING="BDG_RenderTests"
+    JUCE_APPLICATION_VERSION_STRING="1.0.0"
+)
+
+target_link_libraries(BDG_RenderTests PRIVATE
+    BDG_RenderTests_Data
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_recommended_config_flags
+)
+
+add_test(NAME unit.render COMMAND BDG_RenderTests)
+set_tests_properties(unit.render PROPERTIES LABELS "unit" TIMEOUT 120)
+
 # ------------------------------------------------------------- device tests
 # Each of these records from the default input, so they need a machine with a
 # microphone and permission granted. RotationTest and the others shorten the
