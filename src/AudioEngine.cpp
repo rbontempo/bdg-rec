@@ -215,6 +215,13 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
         }
 
         nativeSampleRate.store(newRate);
+
+        // Size the downmix scratch buffer here, off the audio thread. Generous
+        // headroom over the declared block size so the callback never has to
+        // clamp; `false, false, true` avoids keeping old contents and avoids
+        // reallocating when the size does not actually grow.
+        const int declared = juce::jmax(device->getCurrentBufferSizeSamples(), 512);
+        monoBuffer.setSize(1, declared * 4, false, false, true);
         int ch = device->getActiveInputChannels().countNumberOfSetBits();
         if (ch == 0) ch = 1;
         nativeChannels.store(ch);
@@ -303,9 +310,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     // at once, but leave `recording` set so stopRecording() still saves.
     if (recording.load() && ! deviceMismatch.load())
     {
+        // The scratch buffer is sized with plenty of headroom in
+        // audioDeviceAboutToStart; clamping here keeps a device that suddenly
+        // delivers a larger block from writing past the end. Anything that
+        // does not fit is counted rather than lost silently.
+        const int n = juce::jmin(numSamples, monoBuffer.getNumSamples());
+        if (n < numSamples)
+            droppedSamples.fetch_add(numSamples - n);
+
+        if (n <= 0)
+            return;
+
         // Downmix all input channels to mono, applying gain
-        juce::AudioBuffer<float> monoBuffer(1, numSamples);
-        monoBuffer.clear();
+        monoBuffer.clear(0, 0, n);
 
         float* mono = monoBuffer.getWritePointer(0);
         const float channelScale = 1.0f / static_cast<float>(numInputChannels);
@@ -314,7 +331,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         {
             if (inputChannelData[ch] != nullptr)
             {
-                for (int i = 0; i < numSamples; ++i)
+                for (int i = 0; i < n; ++i)
                     mono[i] += inputChannelData[ch][i] * channelScale * g;
             }
         }
@@ -323,30 +340,24 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         const juce::SpinLock::ScopedTryLockType lock(writerLock);
         if (lock.isLocked() && threadedWriter != nullptr)
         {
-            threadedWriter->write(monoBuffer.getArrayOfReadPointers(), numSamples);
+            // write() returns false when its FIFO is full, which happens when
+            // the disk stalls long enough to back up ~1.4 s of audio. Those
+            // samples are gone; at least make the loss countable.
+            if (! threadedWriter->write(monoBuffer.getArrayOfReadPointers(), n))
+                droppedSamples.fetch_add(n);
 
-            auto newCount = samplesInChunk.fetch_add(numSamples) + numSamples;
+            auto newCount = samplesInChunk.fetch_add(n) + n;
 
-            if (newCount >= samplesPerChunk && !chunkRotationPending.exchange(true))
-            {
-                auto aliveFlag = alive;
-                juce::MessageManager::callAsync([this, aliveFlag]() {
-                    if (!aliveFlag->load()) return;
-                    if (! recording.load())
-                        return;
-
-                    // A failed rotation leaves the previous writer in place, so
-                    // no audio is lost — but the sample counter stays over the
-                    // threshold and every following block would retry. Stop
-                    // cleanly instead of hammering a disk that just refused us.
-                    if (! openNextChunk())
-                    {
-                        DBG("  chunk rotation failed — stopping recording");
-                        if (stopRecording() != juce::File())
-                            listeners.call(&Listener::recordingAutoStopped);
-                    }
-                });
-            }
+            // Just raise a flag — the rotation itself is done by the timer on
+            // the message thread. callAsync() from here allocates the message
+            // and can take a lock inside the OS queue, neither of which
+            // belongs on the audio thread.
+            if (newCount >= samplesPerChunk)
+                chunkRotationPending.store(true);
+        }
+        else
+        {
+            droppedSamples.fetch_add(n);
         }
     }
 }
@@ -408,6 +419,11 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
         int ch = device->getActiveInputChannels().countNumberOfSetBits();
         if (ch == 0) ch = 1;
         nativeChannels.store(ch);
+
+        // Belt and braces: audioDeviceAboutToStart normally sizes this, but
+        // the callback must never find it empty.
+        const int declared = juce::jmax(device->getCurrentBufferSizeSamples(), 512);
+        monoBuffer.setSize(1, declared * 4, false, false, true);
     }
     else
     {
@@ -430,8 +446,11 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
         return false;
     }
 
+    droppedSamples.store(0);
+    timerTicks = 0;
+
     recording.store(true);
-    startTimer(10000); // poll disk space every 10 seconds
+    startTimer(1000); // chunk rotation each tick; disk space every 10th
     DBG("  Chunk recording started. chunkFolder=" + chunkFolder.getFullPathName()
         + " samplesPerChunk=" + juce::String(samplesPerChunk));
     return true;
@@ -661,6 +680,10 @@ juce::File AudioEngine::stopRecording()
         writerThread.reset();
     }
 
+    if (droppedSamples.load() > 0)
+        DBG("  stopRecording: WARNING " + juce::String(droppedSamples.load())
+            + " samples were dropped by the write path");
+
     // Concatenate all chunks into final file
     auto result = concatenateChunks();
 
@@ -692,6 +715,28 @@ bool AudioEngine::isRecording() const
 void AudioEngine::timerCallback()
 {
     if (!recording.load()) return;
+
+    // ---- Chunk rotation (flag raised by the audio thread) ----
+    if (chunkRotationPending.load())
+    {
+        // A failed rotation leaves the previous writer in place, so no audio
+        // is lost — but the sample counter stays over the threshold and every
+        // following tick would retry. Stop cleanly instead of hammering a disk
+        // that just refused us.
+        if (! openNextChunk())
+        {
+            DBG("  chunk rotation failed — stopping recording");
+            if (stopRecording() != juce::File())
+                listeners.call(&Listener::recordingAutoStopped);
+            return;
+        }
+    }
+
+    // ---- Disk space (every 10th tick, i.e. the original 10 s cadence) ----
+    if (++timerTicks < kDiskCheckEveryTicks)
+        return;
+
+    timerTicks = 0;
 
     auto freeBytes = chunkFolder.getBytesFreeOnVolume();
     int bytesPerSec = (int)(nativeSampleRate.load() * 3.0); // 24-bit mono = 3 bytes/sample

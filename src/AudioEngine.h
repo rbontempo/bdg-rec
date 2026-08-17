@@ -75,6 +75,10 @@ public:
     juce::File  stopRecording();
     bool        isRecording() const;
 
+    // Samples the write path could not accept during the last take (disk
+    // stalls). Zero on a healthy recording.
+    juce::int64 getDroppedSamples() const { return droppedSamples.load(); }
+
     //==============================================================================
     // DSP processing (runs on background thread)
     void processRecording(const juce::File& file,
@@ -149,6 +153,20 @@ private:
     // written at. Stops the write path immediately, without clearing
     // `recording` — stopRecording() still has to run to save what we have.
     std::atomic<bool> deviceMismatch{false};
+
+    // Pre-allocated in audioDeviceAboutToStart. Building an AudioBuffer inside
+    // the callback meant a malloc/free on the audio thread for every block.
+    juce::AudioBuffer<float> monoBuffer;
+
+    // Samples the writer refused (its FIFO backed up because the disk stalled)
+    // plus anything a short scratch buffer could not hold. Counted so the loss
+    // is reportable instead of silent.
+    std::atomic<juce::int64> droppedSamples{0};
+
+    // Timer runs at 1 s so chunk rotation is picked up promptly; the disk
+    // check only needs every tenth tick, matching the old 10 s cadence.
+    int timerTicks{0};
+    static constexpr int kDiskCheckEveryTicks = 10;
 
     // SpinLock to protect threadedWriter during chunk rotation
     juce::SpinLock writerLock;
