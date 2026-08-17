@@ -1,27 +1,14 @@
 #include "VuMeter.h"
 #include "BdgColours.h"
+#include "LevelScale.h"
 
 VuMeter::VuMeter() {}
 
-static constexpr float kMinDb = -60.0f;
-
-// Single source of truth for the meter's scale: -60 dB at the left edge,
-// 0 dB at the right. The bar fill and the tick marks must both come from
-// here. They used to use different mappings — the bar was in dB while the
-// labels were positioned by linear amplitude — so a -12 dB signal filled
-// 80% of the bar while the "-12" label sat at 25% of the width.
-static float dbToDisplay(float db)
-{
-    if (db <= kMinDb) return 0.0f;
-    return (db - kMinDb) / -kMinDb; // normalize to 0-1
-}
-
-// Convert linear RMS (0-1) to a 0-1 display value using the dB scale above.
-static float rmsToDisplay(float rms)
-{
-    if (rms <= 0.0f) return 0.0f;
-    return dbToDisplay(20.0f * std::log10(rms));
-}
+// The scale itself lives in LevelScale.h so the waveform display cannot drift
+// away from it again — it used to draw raw linear amplitude while this meter
+// used dB, and the two disagreed about the same signal.
+static float dbToDisplay(float db)   { return LevelScale::fromDb(db); }
+static float rmsToDisplay(float rms) { return LevelScale::fromRms(rms); }
 
 void VuMeter::setLevels(float l, float r)
 {

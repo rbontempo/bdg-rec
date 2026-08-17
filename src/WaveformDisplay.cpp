@@ -1,6 +1,7 @@
 #include "WaveformDisplay.h"
 #include "BinaryData.h"
 #include "Strings.h"
+#include "LevelScale.h"
 
 WaveformDisplay::WaveformDisplay()
 {
@@ -8,10 +9,14 @@ WaveformDisplay::WaveformDisplay()
         BinaryData::logobdgrec_png, BinaryData::logobdgrec_pngSize);
 }
 
-juce::Colour WaveformDisplay::vuColor(float rms) const
+// Takes the already-scaled 0..1 level, not the raw RMS. Comparing raw
+// amplitude against these thresholds meant the bars only left green above
+// -2.5 dB, so in practice they were always green while the VU meter beside
+// them was showing yellow.
+juce::Colour WaveformDisplay::vuColor(float level) const
 {
-    if (rms < 0.75f)   return BdgColours::vuGreen;
-    if (rms < 0.875f)  return BdgColours::vuYellow;
+    if (level < LevelScale::greenEnd)  return BdgColours::vuGreen;
+    if (level < LevelScale::yellowEnd) return BdgColours::vuYellow;
     return BdgColours::vuRed;
 }
 
@@ -97,12 +102,16 @@ void WaveformDisplay::paint(juce::Graphics& g)
 
         for (int i = numBars - 1; i >= 0 && x >= -barWidth; --i, x -= stride)
         {
-            float rms = rmsSamples[(size_t)i];
-            float barH = std::max(2.0f, rms * h * 0.80f);
+            // Same scale as the VU meter. This used raw linear RMS, which put
+            // ordinary speech at about 1% of the height — the display sat on
+            // its 2px floor and looked like a flat dotted line.
+            const float level = LevelScale::fromRms(rmsSamples[(size_t)i]);
+
+            float barH = std::max(2.0f, level * h * 0.80f);
             float barY = (h - barH) * 0.5f;
 
-            float alpha = 0.6f + rms * 0.4f;
-            g.setColour(vuColor(rms).withAlpha(alpha));
+            float alpha = 0.6f + level * 0.4f;
+            g.setColour(vuColor(level).withAlpha(alpha));
             g.fillRoundedRectangle(x, barY, (float)barWidth, barH, 1.0f);
         }
     }

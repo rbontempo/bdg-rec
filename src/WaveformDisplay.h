@@ -18,7 +18,8 @@ private:
     std::deque<float> rmsSamples;
     juce::Image logoImage;
 
-    juce::Colour vuColor(float rms) const;
+    // Takes the scaled 0..1 level, not raw RMS.
+    juce::Colour vuColor(float level) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformDisplay)
 };
