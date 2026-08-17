@@ -107,10 +107,14 @@ void VuMeter::paint(juce::Graphics& g)
 
         juce::String label = (dbValues[i] == 0) ? "0" : juce::String(dbValues[i]);
 
-        // Center the text around xPos
-        float textW = 20.0f;
+        // Centre the text on the tick, but keep it inside the component: "0"
+        // sits at the far right of the scale, so half of it fell outside and
+        // was clipped away.
+        const float textW = 20.0f;
+        const float textX = juce::jlimit(0.0f, w - textW, xPos - textW * 0.5f);
+
         g.drawText(label,
-                   juce::Rectangle<float>(xPos - textW * 0.5f, scaleY, textW, scaleH),
+                   juce::Rectangle<float>(textX, scaleY, textW, scaleH),
                    juce::Justification::centred, false);
 
         // Tick mark
