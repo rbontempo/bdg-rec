@@ -71,7 +71,8 @@ try {
 
         $os = substr($evt['os'] ?? '', 0, 40);
         $version = substr($evt['app_version'] ?? '', 0, 15);
-        $hardware = substr($evt['hardware'] ?? '', 0, 100);
+        // Never store the raw device name — see normalizeHardware().
+        $hardware = normalizeHardware($evt['hardware'] ?? null);
         $locale = substr($evt['locale'] ?? '', 0, 10);
 
         $extra = $evt['extra'] ?? null;
@@ -95,7 +96,7 @@ try {
             $machineId,
             $os ?: null,
             $version ?: null,
-            $hardware ?: null,
+            $hardware,
             $locale ?: null,
             $extra !== null ? json_encode($extra) : null,
         ]);

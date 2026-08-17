@@ -47,6 +47,41 @@ function getAdminPasswordHash(): string {
     return $_ENV['ADMIN_PASSWORD_HASH'] ?? '';
 }
 
+/**
+ * Reduce a microphone description to a fixed category.
+ *
+ * Device names routinely embed the owner's name ("AirPods do Renato",
+ * "iPhone de Fulano — Microfone"), which is personal data we have no business
+ * storing. The app stopped sending the raw name in v1.1.12, but every copy
+ * still running an older build keeps sending it — so the normalisation has to
+ * happen here, on the way in, or the database keeps collecting names for as
+ * long as anyone is on an old version.
+ *
+ * Mirrors AudioEngine::getCurrentInputDeviceCategory() in the app.
+ * Only ever returns one of: builtin, usb, bluetooth, other, none.
+ */
+function normalizeHardware(?string $raw): ?string {
+    $raw = trim((string) $raw);
+    if ($raw === '') return null;
+
+    // Already a category (app v1.1.12+): pass through untouched.
+    if (in_array($raw, ['builtin', 'usb', 'bluetooth', 'other', 'none'], true)) {
+        return $raw;
+    }
+
+    $name = mb_strtolower($raw, 'UTF-8');
+
+    foreach (['bluetooth', 'airpod', 'wireless'] as $needle) {
+        if (str_contains($name, $needle)) return 'bluetooth';
+    }
+    if (str_contains($name, 'usb')) return 'usb';
+    foreach (['built-in', 'builtin', 'internal', 'macbook', 'interno', 'integrado'] as $needle) {
+        if (str_contains($name, $needle)) return 'builtin';
+    }
+
+    return 'other';
+}
+
 function jsonResponse(int $code, array $data): never {
     http_response_code($code);
     header('Content-Type: application/json');
