@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BDG rec — Admin</title>
+  <link rel="icon" href="BDG_ico.png" type="image/png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bdg: { primary: '#E5067D' },
+            card: '#09090b',
+            surface: '#0c0c0e',
+            border: '#1e1e22',
+            muted: '#71717a',
+          },
+          fontFamily: {
+            sans: ['"Instrument Sans"', 'sans-serif'],
+            mono: ['"Space Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Instrument Sans', sans-serif; background: #09090b; color: #fafafa; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+
+    /* Sidebar */
+    .sidebar { width: 240px; border-right: 1px solid #1e1e22; }
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: 500;
+      color: #a1a1aa; transition: background 0.15s, color 0.15s;
+      text-decoration: none; cursor: pointer;
+    }
+    .sidebar-link:hover { background: #18181b; color: #fafafa; }
+    .sidebar-link.active { background: #18181b; color: #fafafa; }
+
+    /* Cards */
+    .stat-card {
+      background: #09090b;
+      border: 1px solid #1e1e22;
+      border-radius: 12px;
+      padding: 24px;
+      transition: border-color 0.2s;
+    }
+    .stat-card:hover { border-color: #2e2e32; }
+
+    /* Table */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th {
+      text-align: left; padding: 10px 16px; font-weight: 500; font-size: 12px;
+      color: #71717a; border-bottom: 1px solid #1e1e22; letter-spacing: 0.02em;
+    }
+    .data-table td {
+      padding: 10px 16px; border-bottom: 1px solid #1e1e22; color: #d4d4d8;
+    }
+    .data-table tr:hover td { background: #0c0c0e; }
+
+    /* Badge */
+    .badge {
+      display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+    }
+    .badge-green { background: rgba(34,197,94,0.12); color: #22c55e; }
+    .badge-yellow { background: rgba(234,179,8,0.12); color: #eab308; }
+    .badge-red { background: rgba(239,68,68,0.12); color: #ef4444; }
+    .badge-pink { background: rgba(229,6,125,0.12); color: #E5067D; }
+
+    /* Chart container */
+    .chart-card {
+      background: #09090b;
+      border: 1px solid #1e1e22;
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    /* Tabs */
+    .tab-btn {
+      padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
+      cursor: pointer; border: none; transition: background 0.15s, color 0.15s;
+      color: #71717a; background: transparent;
+    }
+    .tab-btn:hover { color: #d4d4d8; }
+    .tab-btn.active { background: #18181b; color: #fafafa; }
+    .tab-btn:focus-visible { outline: 2px solid #E5067D; outline-offset: 2px; }
+
+    /* Fade in */
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+    .fade-in-1 { animation-delay: 0.05s; }
+    .fade-in-2 { animation-delay: 0.1s; }
+    .fade-in-3 { animation-delay: 0.15s; }
+    .fade-in-4 { animation-delay: 0.2s; }
+    .fade-in-5 { animation-delay: 0.25s; }
+    .fade-in-6 { animation-delay: 0.3s; }
+  </style>
+</head>
+<body>
+  <!-- Login overlay -->
+  <div id="login-overlay" class="fixed inset-0 z-50 flex items-center justify-center" style="background: #09090b;">
+    <div class="w-full max-w-sm p-8">
+      <div class="flex items-center justify-center gap-3 mb-8">
+        <img src="logo-bdg-rec.png" alt="BDG rec" class="h-8">
+        <span class="badge badge-pink font-mono text-[10px]">ADMIN</span>
+      </div>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="text-xs text-muted block mb-1.5">Email</label>
+          <input type="email" id="login-email" required
+            class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+            placeholder="rbontempo@gmail.com">
+        </div>
+        <div>
+          <label class="text-xs text-muted block mb-1.5">Senha</label>
+          <input type="password" id="login-password" required
+            class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+            placeholder="••••••••">
+        </div>
+        <div id="login-error" class="text-xs text-red-500 hidden">Credenciais inválidas</div>
+        <button type="submit"
+          class="w-full py-2 rounded-lg text-sm font-semibold text-white bg-bdg-primary hover:opacity-90 transition-opacity">
+          Entrar
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar flex flex-col h-full p-4 shrink-0">
+      <div class="flex items-center gap-3 px-3 mb-8 mt-2">
+        <img src="logo-bdg-rec.png" alt="BDG rec" class="h-6">
+        <span class="badge badge-pink font-mono text-[10px]">ADMIN</span>
+      </div>
+      <nav class="flex flex-col gap-1 flex-1">
+        <a class="sidebar-link active" data-page="overview">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Overview
+        </a>
+        <a class="sidebar-link" data-page="events" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          Eventos
+        </a>
+        <a class="sidebar-link" data-page="installs" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Instalações
+        </a>
+        <a class="sidebar-link" data-page="licenses" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Licenças
+        </a>
+      </nav>
+      <div class="mt-auto border-t border-border pt-2">
+        <a class="sidebar-link" data-page="profile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Perfil
+        </a>
+        <a class="sidebar-link" id="logout-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sair
+        </a>
+        <a href="/" class="sidebar-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          Voltar ao site
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 overflow-y-auto p-8">
+
+      <!-- Profile page -->
+      <div id="page-profile" class="max-w-lg mx-auto" style="display:none">
+        <h1 class="text-2xl font-bold tracking-[-0.02em] mb-2">Perfil</h1>
+        <p class="text-muted text-sm mb-8">Gerencie sua conta</p>
+
+        <div class="chart-card mb-6">
+          <h3 class="font-semibold text-sm mb-4">Alterar senha</h3>
+          <form id="change-password-form" class="space-y-4">
+            <div>
+              <label class="text-xs text-muted block mb-1.5">Senha atual</label>
+              <input type="password" id="current-password" required
+                class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+                placeholder="••••••••">
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1.5">Nova senha</label>
+              <input type="password" id="new-password" required minlength="8"
+                class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+                placeholder="Mínimo 8 caracteres">
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1.5">Confirmar nova senha</label>
+              <input type="password" id="confirm-password" required minlength="8"
+                class="w-full px-3 py-2 rounded-lg text-sm bg-[#18181b] border border-border text-white focus:outline-none focus:border-bdg-primary"
+                placeholder="••••••••">
+            </div>
+            <div id="password-error" class="text-xs text-red-500 hidden"></div>
+            <div id="password-success" class="text-xs text-green-500 hidden">Senha alterada com sucesso</div>
+            <button type="submit"
+              class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-bdg-primary hover:opacity-90 transition-opacity">
+              Salvar nova senha
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Overview page -->
+      <div id="page-overview" class="max-w-6xl mx-auto">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-8 fade-in">
+          <div>
+            <h1 class="text-2xl font-bold tracking-[-0.02em]">Analytics</h1>
+            <p class="text-muted text-sm mt-1">Monitoramento do BDG rec</p>
+          </div>
+          <div class="flex gap-2 bg-[#18181b] rounded-lg p-1">
+            <button class="tab-btn active" data-range="7d">7 dias</button>
+            <button class="tab-btn" data-range="30d">30 dias</button>
+            <button class="tab-btn" data-range="90d">90 dias</button>
+          </div>
+        </div>
+
+        <!-- Stat cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div class="stat-card fade-in fade-in-1">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-muted text-xs font-medium tracking-wide">Instalações ativas</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div class="text-3xl font-bold tracking-[-0.03em] font-mono" id="stat-installs">247</div>
+            <div class="flex items-center gap-1 mt-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+              <span class="text-[11px] text-green-500 font-medium">+12%</span>
+              <span class="text-[11px] text-muted ml-1">vs semana anterior</span>
+            </div>
+          </div>
+          <div class="stat-card fade-in fade-in-2">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-muted text-xs font-medium tracking-wide">Ativos hoje</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="text-3xl font-bold tracking-[-0.03em] font-mono" id="stat-today">38</div>
+            <div class="flex items-center gap-1 mt-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+              <span class="text-[11px] text-green-500 font-medium">+5%</span>
+              <span class="text-[11px] text-muted ml-1">vs ontem</span>
+            </div>
+          </div>
+          <div class="stat-card fade-in fade-in-3">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-muted text-xs font-medium tracking-wide">Gravações</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="#71717a"/></svg>
+            </div>
+            <div class="text-3xl font-bold tracking-[-0.03em] font-mono" id="stat-recordings">1,842</div>
+            <div class="flex items-center gap-1 mt-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+              <span class="text-[11px] text-green-500 font-medium">+23%</span>
+              <span class="text-[11px] text-muted ml-1">vs semana anterior</span>
+            </div>
+          </div>
+          <div class="stat-card fade-in fade-in-4">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-muted text-xs font-medium tracking-wide">Tempo médio sessão</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+            </div>
+            <div class="text-3xl font-bold tracking-[-0.03em] font-mono" id="stat-duration">42<span class="text-lg text-muted ml-1">min</span></div>
+            <div class="flex items-center gap-1 mt-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span class="text-[11px] text-yellow-500 font-medium">estável</span>
+              <span class="text-[11px] text-muted ml-1">vs semana anterior</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="grid lg:grid-cols-3 gap-4 mb-8">
+          <!-- Activity chart (2 cols) -->
+          <div class="chart-card lg:col-span-2 fade-in fade-in-5">
+            <div class="flex items-center justify-between mb-6">
+              <h3 class="font-semibold text-sm">Atividade diária</h3>
+              <div class="flex gap-4 text-xs text-muted">
+                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-bdg-primary"></span>Aberturas</span>
+                <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#3b82f6]"></span>Gravações</span>
+              </div>
+            </div>
+            <div style="height: 240px;">
+              <canvas id="activityChart"></canvas>
+            </div>
+          </div>
+
+          <!-- OS distribution -->
+          <div class="chart-card fade-in fade-in-6">
+            <h3 class="font-semibold text-sm mb-6">Sistema operacional</h3>
+            <div class="flex items-center justify-center" style="height: 160px;">
+              <canvas id="osChart"></canvas>
+            </div>
+            <div class="flex justify-center gap-6 mt-4 text-xs text-muted">
+              <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-bdg-primary"></span>macOS</span>
+              <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#3b82f6]"></span>Windows</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom row -->
+        <div class="grid lg:grid-cols-2 gap-4 mb-8">
+          <!-- DSP Usage -->
+          <div class="chart-card fade-in fade-in-5">
+            <h3 class="font-semibold text-sm mb-6">Uso de DSP (tratamentos)</h3>
+            <div class="space-y-4" id="dsp-bars">
+              <div>
+                <div class="flex items-center justify-between text-sm mb-1.5">
+                  <span class="text-[#d4d4d8]">Normalizar</span>
+                  <span class="font-mono text-xs text-muted">78%</span>
+                </div>
+                <div class="h-2 bg-[#18181b] rounded-full overflow-hidden">
+                  <div class="h-full bg-bdg-primary rounded-full" style="width: 78%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex items-center justify-between text-sm mb-1.5">
+                  <span class="text-[#d4d4d8]">Redução de ruído</span>
+                  <span class="font-mono text-xs text-muted">64%</span>
+                </div>
+                <div class="h-2 bg-[#18181b] rounded-full overflow-hidden">
+                  <div class="h-full bg-[#8b5cf6] rounded-full" style="width: 64%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex items-center justify-between text-sm mb-1.5">
+                  <span class="text-[#d4d4d8]">Compressor</span>
+                  <span class="font-mono text-xs text-muted">45%</span>
+                </div>
+                <div class="h-2 bg-[#18181b] rounded-full overflow-hidden">
+                  <div class="h-full bg-[#3b82f6] rounded-full" style="width: 45%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex items-center justify-between text-sm mb-1.5">
+                  <span class="text-[#d4d4d8]">De-Esser</span>
+                  <span class="font-mono text-xs text-muted">31%</span>
+                </div>
+                <div class="h-2 bg-[#18181b] rounded-full overflow-hidden">
+                  <div class="h-full bg-[#06b6d4] rounded-full" style="width: 31%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- App versions -->
+          <div class="chart-card fade-in fade-in-6">
+            <h3 class="font-semibold text-sm mb-6">Versões do app</h3>
+            <div style="height: 200px;">
+              <canvas id="versionsChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent events table -->
+        <div class="chart-card fade-in fade-in-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-sm">Eventos recentes</h3>
+            <span class="text-muted text-xs">Últimos 50 eventos</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Evento</th>
+                  <th>Machine ID</th>
+                  <th>OS</th>
+                  <th>Versão</th>
+                  <th>Hardware</th>
+                  <th>Quando</th>
+                </tr>
+              </thead>
+              <tbody id="events-table">
+                <tr>
+                  <td><span class="badge badge-green">app_open</span></td>
+                  <td class="font-mono text-xs">a3f8…c21d</td>
+                  <td>macOS 15.3</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">Scarlett 2i2</td>
+                  <td class="text-muted text-xs">agora</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-pink">recording_end</span></td>
+                  <td class="font-mono text-xs">7b21…e4f9</td>
+                  <td>Windows 11</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">Realtek HD</td>
+                  <td class="text-muted text-xs">2 min atrás</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-green">app_open</span></td>
+                  <td class="font-mono text-xs">e912…b3a7</td>
+                  <td>macOS 14.7</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">MacBook Pro Mic</td>
+                  <td class="text-muted text-xs">5 min atrás</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-pink">recording_end</span></td>
+                  <td class="font-mono text-xs">4c88…d1e6</td>
+                  <td>macOS 15.3</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">Blue Yeti</td>
+                  <td class="text-muted text-xs">12 min atrás</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-green">app_open</span></td>
+                  <td class="font-mono text-xs">f1a4…92c3</td>
+                  <td>Windows 10</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">RODE NT-USB</td>
+                  <td class="text-muted text-xs">18 min atrás</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-yellow">dsp_applied</span></td>
+                  <td class="font-mono text-xs">a3f8…c21d</td>
+                  <td>macOS 15.3</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">Scarlett 2i2</td>
+                  <td class="text-muted text-xs">22 min atrás</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-green">app_open</span></td>
+                  <td class="font-mono text-xs">3d09…a8b2</td>
+                  <td>macOS 15.1</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">Shure MV7</td>
+                  <td class="text-muted text-xs">35 min atrás</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-pink">recording_end</span></td>
+                  <td class="font-mono text-xs">8e55…f7d4</td>
+                  <td>Windows 11</td>
+                  <td>v1.0.0</td>
+                  <td class="text-xs">Audio-Technica AT2020</td>
+                  <td class="text-muted text-xs">41 min atrás</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /page-overview -->
+    </main>
+  </div>
+
+  <script>
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = String(str);
+      return div.innerHTML;
+    }
+
+    // --- Login ---
+    const loginOverlay = document.getElementById('login-overlay');
+    const loginForm = document.getElementById('login-form');
+    const loginError = document.getElementById('login-error');
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loginError.classList.add('hidden');
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+
+      try {
+        const res = await fetch('/api/auth.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        if (res.ok) {
+          loginOverlay.style.display = 'none';
+          loadDashboard('7d');
+        } else {
+          loginError.classList.remove('hidden');
+        }
+      } catch {
+        loginError.classList.remove('hidden');
+      }
+    });
+
+    // Try loading dashboard (if session already active)
+    (async () => {
+      try {
+        const res = await fetch('/api/stats.php?range=7d');
+        if (res.ok) {
+          loginOverlay.style.display = 'none';
+          const data = await res.json();
+          renderDashboard(data);
+        }
+      } catch { /* show login */ }
+    })();
+
+    // --- Chart instances (for destruction on re-render) ---
+    let activityChartInstance = null;
+    let osChartInstance = null;
+    let versionsChartInstance = null;
+
+    // --- Dashboard ---
+    async function loadDashboard(range) {
+      try {
+        const res = await fetch(`/api/stats.php?range=${range}`);
+        if (!res.ok) { loginOverlay.style.display = 'flex'; return; }
+        const data = await res.json();
+        renderDashboard(data);
+      } catch (err) {
+        console.error('Failed to load dashboard:', err);
+      }
+    }
+
+    function renderDashboard(data) {
+      // Chart.js global config
+      Chart.defaults.color = '#71717a';
+      Chart.defaults.borderColor = '#1e1e22';
+      Chart.defaults.font.family = "'Instrument Sans', sans-serif";
+      Chart.defaults.font.size = 11;
+
+      // Stat cards
+      document.getElementById('stat-installs').textContent = data.cards.active_installs.value.toLocaleString();
+      document.getElementById('stat-today').textContent = data.cards.active_today.value.toLocaleString();
+      document.getElementById('stat-recordings').textContent = data.cards.total_recordings.value.toLocaleString();
+
+      const avgMin = data.cards.avg_duration_min.value;
+      document.getElementById('stat-duration').innerHTML = `${avgMin}<span class="text-lg text-muted ml-1">min</span>`;
+
+      // Update change indicators on stat cards
+      const cardEls = document.querySelectorAll('.stat-card');
+      const cardKeys = ['active_installs', 'active_today', 'total_recordings', 'avg_duration_min'];
+      cardKeys.forEach((key, i) => {
+        const card = cardEls[i];
+        const pct = data.cards[key].change_pct;
+        const changeEl = card.querySelector('.flex.items-center.gap-1.mt-2');
+        if (changeEl) {
+          const isUp = pct > 0;
+          const isDown = pct < 0;
+          const color = isUp ? '#22c55e' : isDown ? '#ef4444' : '#eab308';
+          const textColor = isUp ? 'text-green-500' : isDown ? 'text-red-500' : 'text-yellow-500';
+          const label = isUp ? `+${pct}%` : pct === 0 ? 'estável' : `${pct}%`;
+          const svgUp = '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>';
+          const svgDown = '<polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>';
+          const svgFlat = '<line x1="5" y1="12" x2="19" y2="12"/>';
+          const svgPath = isUp ? svgUp : isDown ? svgDown : svgFlat;
+          changeEl.innerHTML = `
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5">${svgPath}</svg>
+            <span class="text-[11px] ${textColor} font-medium">${label}</span>
+            <span class="text-[11px] text-muted ml-1">vs período anterior</span>`;
+        }
+      });
+
+      // Activity chart
+      if (activityChartInstance) activityChartInstance.destroy();
+      const activityCtx = document.getElementById('activityChart').getContext('2d');
+      activityChartInstance = new Chart(activityCtx, {
+        type: 'line',
+        data: {
+          labels: data.activity.labels.map(d => {
+            const date = new Date(d + 'T00:00:00');
+            return date.toLocaleDateString('pt-BR', { weekday: 'short' });
+          }),
+          datasets: [
+            {
+              label: 'Aberturas', data: data.activity.opens,
+              borderColor: '#E5067D', backgroundColor: 'rgba(229,6,125,0.08)',
+              fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0,
+              pointHoverRadius: 5, pointHoverBackgroundColor: '#E5067D',
+            },
+            {
+              label: 'Gravações', data: data.activity.recordings,
+              borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.06)',
+              fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0,
+              pointHoverRadius: 5, pointHoverBackgroundColor: '#3b82f6',
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { padding: 8 } },
+            y: { grid: { color: '#1e1e22' }, ticks: { padding: 8 }, beginAtZero: true }
+          }
+        }
+      });
+
+      // OS chart
+      const osLabels = Object.keys(data.os_distribution);
+      const osValues = Object.values(data.os_distribution);
+      const osColors = osLabels.map(l => l === 'macOS' ? '#E5067D' : l === 'Windows' ? '#3b82f6' : '#71717a');
+
+      if (osChartInstance) osChartInstance.destroy();
+      const osCtx = document.getElementById('osChart').getContext('2d');
+      osChartInstance = new Chart(osCtx, {
+        type: 'doughnut',
+        data: { labels: osLabels, datasets: [{ data: osValues, backgroundColor: osColors, borderWidth: 0, spacing: 3 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '70%',
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.parsed}` } } }
+        }
+      });
+
+      // DSP usage bars
+      const dspLabels = { normalize: 'Normalizar', denoise: 'Redução de ruído', compress: 'Compressor', deesser: 'De-Esser' };
+      const dspColors = { normalize: '#E5067D', denoise: '#8b5cf6', compress: '#3b82f6', deesser: '#06b6d4' };
+      const dspContainer = document.getElementById('dsp-bars');
+      if (dspContainer) {
+        dspContainer.innerHTML = Object.entries(data.dsp_usage).map(([key, pct]) => `
+          <div>
+            <div class="flex items-center justify-between text-sm mb-1.5">
+              <span class="text-[#d4d4d8]">${escapeHtml(dspLabels[key] || key)}</span>
+              <span class="font-mono text-xs text-muted">${escapeHtml(String(pct))}%</span>
+            </div>
+            <div class="h-2 bg-[#18181b] rounded-full overflow-hidden">
+              <div class="h-full rounded-full" style="width: ${pct}%; background: ${dspColors[key] || '#E5067D'}"></div>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // Versions chart
+      const versionLabels = Object.keys(data.versions).map(v => v.startsWith('v') ? v : `v${v}`);
+      const versionValues = Object.values(data.versions);
+      const versionColors = versionValues.map((_, i) => {
+        const opacity = Math.max(0.15, 1 - i * 0.25);
+        return i === 0 ? '#E5067D' : `rgba(229,6,125,${opacity})`;
+      });
+
+      if (versionsChartInstance) versionsChartInstance.destroy();
+      const versionsCtx = document.getElementById('versionsChart').getContext('2d');
+      versionsChartInstance = new Chart(versionsCtx, {
+        type: 'bar',
+        data: { labels: versionLabels, datasets: [{ data: versionValues, backgroundColor: versionColors, borderRadius: 6, barThickness: 40 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: '#1e1e22' }, ticks: { padding: 8 }, beginAtZero: true },
+            y: { grid: { display: false }, ticks: { padding: 8, font: { family: "'Space Mono', monospace", size: 12 } } }
+          }
+        }
+      });
+
+      // Recent events table
+      const badgeClass = { app_open: 'badge-green', recording_end: 'badge-pink', dsp_applied: 'badge-yellow', export_complete: 'badge-pink', error: 'badge-red' };
+      const tbody = document.getElementById('events-table');
+      tbody.innerHTML = data.recent_events.map(evt => {
+        const ago = timeAgo(new Date(evt.created_at));
+        return `<tr>
+          <td><span class="badge ${badgeClass[evt.event] || 'badge-green'}">${escapeHtml(evt.event)}</span></td>
+          <td class="font-mono text-xs">${escapeHtml(evt.machine_id)}</td>
+          <td>${escapeHtml(evt.os) || '—'}</td>
+          <td>${evt.app_version ? 'v' + escapeHtml(evt.app_version) : '—'}</td>
+          <td class="text-xs">${escapeHtml(evt.hardware) || '—'}</td>
+          <td class="text-muted text-xs">${ago}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function timeAgo(date) {
+      const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+      if (seconds < 60) return 'agora';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes} min atrás`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h atrás`;
+      const days = Math.floor(hours / 24);
+      return `${days}d atrás`;
+    }
+
+    // Tab switching (range)
+    document.querySelectorAll('[data-range]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-range]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadDashboard(btn.dataset.range);
+      });
+    });
+
+    // Sidebar nav + page switching
+    function showPage(page) {
+      document.getElementById('page-overview').style.display = page === 'overview' ? '' : 'none';
+      document.getElementById('page-profile').style.display = page === 'profile' ? '' : 'none';
+    }
+
+    document.querySelectorAll('[data-page]').forEach(link => {
+      link.addEventListener('click', () => {
+        document.querySelectorAll('[data-page]').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+        showPage(link.dataset.page);
+      });
+    });
+
+    // Change password
+    document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('password-error');
+      const okEl = document.getElementById('password-success');
+      errEl.classList.add('hidden');
+      okEl.classList.add('hidden');
+
+      const currentPassword = document.getElementById('current-password').value;
+      const newPassword = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+
+      if (newPassword !== confirmPassword) {
+        errEl.textContent = 'As senhas não coincidem';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/change-password.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          okEl.classList.remove('hidden');
+          document.getElementById('change-password-form').reset();
+        } else {
+          errEl.textContent = data.error || 'Erro ao alterar senha';
+          errEl.classList.remove('hidden');
+        }
+      } catch {
+        errEl.textContent = 'Erro de conexão';
+        errEl.classList.remove('hidden');
+      }
+    });
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/api/logout.php', { method: 'POST' });
+      location.reload();
+    });
+  </script>
+
+</body>
+</html>
