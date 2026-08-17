@@ -1082,6 +1082,43 @@ void AudioEngine::processRecording(const juce::File& file,
                 });
             };
 
+            // Envelope followers and IIR states decay into denormal range on
+            // silence, where each operation can cost orders of magnitude more.
+            juce::ScopedNoDenormals noDenormals;
+
+            // The whole body runs inside this guard. The DSP path allocates
+            // several buffers the size of the entire take (the multiband
+            // compressor alone needs four), so a long episode on a machine
+            // with modest RAM throws std::bad_alloc right here. Uncaught in a
+            // thread, that is std::terminate — the app just vanished. The
+            // try/catch at the call site could never see it, because that only
+            // wraps the code that *starts* this thread.
+            try
+            {
+                runProcessing(emitStep, emitError, emitFinish);
+            }
+            catch (const std::bad_alloc&)
+            {
+                emitError("Sem memoria suficiente para processar este arquivo. "
+                          "Tente desativar alguns tratamentos.");
+            }
+            catch (const std::exception& e)
+            {
+                emitError(juce::String(e.what()));
+            }
+            catch (...)
+            {
+                emitError("Erro desconhecido no processamento.");
+            }
+        }
+
+    private:
+        // std::function rather than templates: DspThread is a local class, and
+        // local classes cannot have member templates.
+        void runProcessing(const std::function<void(const juce::String&)>& emitStep,
+                           const std::function<void(const juce::String&)>& emitError,
+                           const std::function<void(const juce::File&)>& emitFinish)
+        {
             // 1) Read the WAV file
             juce::AudioFormatManager formatManager;
             formatManager.registerBasicFormats();

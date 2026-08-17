@@ -20,7 +20,9 @@ AnalyticsReporter::AnalyticsReporter() : Thread("AnalyticsReporter") {}
 
 AnalyticsReporter::~AnalyticsReporter()
 {
-    stopThread(5000);
+    // Longer than the 10 s connection timeout in sendBatch(); the old 5 s
+    // meant JUCE could kill this thread while it was inside a network call.
+    stopThread(20000);
     flush();
 }
 
@@ -189,7 +191,8 @@ void AnalyticsReporter::sendBatch()
 
     auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inPostData)
                        .withConnectionTimeoutMs(10000)
-                       .withExtraHeaders("Content-Type: application/json\r\nX-API-Key: " + apiKey);
+                       .withExtraHeaders("Content-Type: application/json\r\nX-API-Key: " + apiKey)
+                       .withProgressCallback([this](int, int) { return ! threadShouldExit(); });
 
     auto stream = url.createInputStream(options);
 

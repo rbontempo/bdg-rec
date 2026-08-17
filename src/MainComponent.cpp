@@ -465,23 +465,11 @@ void MainComponent::handleRecordButtonClicked()
 
         if ((doNorm || doNoise || doComp || doDeEss) && lastRecordedFile.existsAsFile())
         {
-            // Task 19 – wrap processRecording in try/catch
-            try
-            {
-                audioEngine.processRecording(lastRecordedFile, doNorm, doNoise, doComp, doDeEss);
-            }
-            catch (const std::exception& e)
-            {
-                dspOverlay.hide();
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                    "BDG rec", Strings::get().erroProcessamento + e.what());
-            }
-            catch (...)
-            {
-                dspOverlay.hide();
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                    "BDG rec", Strings::get().erroDesconhecido);
-            }
+            // No try/catch here: processRecording() only spawns the DSP thread,
+            // and an exception thrown on that thread cannot travel back to this
+            // call site. The guard that actually catches it lives inside
+            // DspThread::run(), and failures arrive through dspError().
+            audioEngine.processRecording(lastRecordedFile, doNorm, doNoise, doComp, doDeEss);
         }
         else if (lastRecordedFile.existsAsFile())
         {
