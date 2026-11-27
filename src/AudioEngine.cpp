@@ -395,9 +395,15 @@ juce::StringArray AudioEngine::getInputDevices()
 
 juce::String AudioEngine::getCurrentInputDeviceName() const
 {
-    if (auto* dev = deviceManager.getCurrentAudioDevice())
-        return dev->getName();
-    return {};
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr)
+        return {};
+
+    // The configured input, not the device's own name: with monitoring on,
+    // CoreAudio combines input and output into one device named after the
+    // OUTPUT, which would not match any entry in the input list.
+    const auto input = deviceManager.getAudioDeviceSetup().inputDeviceName;
+    return input.isNotEmpty() ? input : dev->getName();
 }
 
 juce::String AudioEngine::getCurrentInputDeviceCategory() const

@@ -84,8 +84,16 @@ void InputPanel::setDevice(const juce::String& deviceName)
 {
     auto devices = audioEngine.getInputDevices();
     int idx = devices.indexOf(deviceName);
-    if (idx >= 0)
-        deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
+    if (idx < 0)
+        return; // saved device is not plugged in: keep showing the one in use
+
+    // This used to only change what the box displayed. The engine stayed on
+    // the default input, so a user who had picked a USB microphone saw it
+    // selected after a restart and recorded from the built-in one.
+    if (audioEngine.getCurrentInputDeviceName() != deviceName)
+        audioEngine.setInputDevice(deviceName);
+
+    deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
 }
 
 void InputPanel::setVolume(int value)
@@ -135,12 +143,15 @@ void InputPanel::refreshDeviceList()
     for (int i = 0; i < devices.size(); ++i)
         deviceCombo.addItem(devices[i], i + 1);
 
-    // Re-select device by name if still available
+    // Re-select device by name if still available; otherwise show the input
+    // the engine actually has open. At startup the box is empty, and leaving
+    // it blank while a microphone was live (the meter moving) also meant ""
+    // was saved as the device, so it stayed blank on every launch after.
     int idx = devices.indexOf(currentName);
-    if (idx >= 0)
-        deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
-    else
-        deviceCombo.setSelectedItemIndex(-1, juce::dontSendNotification);
+    if (idx < 0)
+        idx = devices.indexOf(audioEngine.getCurrentInputDeviceName());
+
+    deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
 }
 
 //==============================================================================
