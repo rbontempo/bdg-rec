@@ -338,6 +338,12 @@ void MainComponent::devicesChanged()
     // Refresh the input device ComboBox
     inputPanel.refreshDeviceList();
 
+    // The format box showed the rate read once at startup. Switching to a
+    // 48 kHz USB microphone left it saying 44.1 kHz — the file is written at
+    // the device's real rate, so the box was simply wrong.
+    if (auto* dev = audioEngine.getDeviceManager().getCurrentAudioDevice())
+        outputPanel.setSampleRate((int) dev->getCurrentSampleRate());
+
     // A disconnect during recording is stopped and reported by the engine
     // through recordingFinished(StopReason::DeviceLost), which also logs the
     // analytics event and carries the salvaged file — nothing to do here.

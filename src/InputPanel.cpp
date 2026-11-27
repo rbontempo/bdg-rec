@@ -143,13 +143,15 @@ void InputPanel::refreshDeviceList()
     for (int i = 0; i < devices.size(); ++i)
         deviceCombo.addItem(devices[i], i + 1);
 
-    // Re-select device by name if still available; otherwise show the input
-    // the engine actually has open. At startup the box is empty, and leaving
-    // it blank while a microphone was live (the meter moving) also meant ""
-    // was saved as the device, so it stayed blank on every launch after.
-    int idx = devices.indexOf(currentName);
+    // Show the input the engine actually has open — not what the box said
+    // before. At startup the box is empty, and leaving it blank while a
+    // microphone was live (the meter moving) also saved "" as the device, so
+    // it stayed blank on every launch after. Likewise, when a chosen device
+    // fails to open and the system falls back to another, the box must not
+    // keep claiming the one that failed. The old text is only a fallback.
+    int idx = devices.indexOf(audioEngine.getCurrentInputDeviceName());
     if (idx < 0)
-        idx = devices.indexOf(audioEngine.getCurrentInputDeviceName());
+        idx = devices.indexOf(currentName);
 
     deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
 }

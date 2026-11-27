@@ -215,7 +215,8 @@ void RecordingPanel::paintDiskSpaceBar(juce::Graphics& g, juce::Rectangle<int> a
                juce::Justification::centredLeft, false);
 
     // Disk space GB label (right side)
-    const float gbLabelW = 36.0f;
+    // Wide enough for "1234.5G": at 36 px anything over 100 GB lost its "G".
+    const float gbLabelW = 52.0f;
     g.setColour(juce::Colours::white.withAlpha(0.60f));
     // Monospace-ish via explicit font
     g.setFont(juce::FontOptions().withHeight(12.0f));
