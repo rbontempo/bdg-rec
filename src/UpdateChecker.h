@@ -16,7 +16,11 @@ public:
                     std::function<void(juce::String newVersion)> onUpdateAvailable);
 
     /// Manual check triggered from menu — bypasses 7-day interval.
-    void forceCheck(std::function<void(juce::String)> onUpdateAvailable = {});
+    /// `onNoUpdate` runs on the message thread when there is nothing to offer:
+    /// `reachable` false means the check itself failed (offline, bad reply).
+    /// The menu used to give no answer at all in either case.
+    void forceCheck(std::function<void(juce::String)> onUpdateAvailable,
+                    std::function<void(bool reachable)> onNoUpdate);
 
     // Pure comparison of two dotted version strings — public so it can be
     // unit tested without any network or UI.
@@ -26,6 +30,8 @@ private:
     void run() override;
 
     std::function<void(juce::String)> callback;
+    std::function<void(bool)> noUpdateCallback;   // set only for a manual check
+    void reportNoUpdate(bool reachable);
     juce::ApplicationProperties* appProps = nullptr;
 
     static constexpr int CHECK_INTERVAL_SECONDS = 7 * 24 * 60 * 60; // 7 days

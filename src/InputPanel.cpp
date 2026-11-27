@@ -16,7 +16,18 @@ InputPanel::InputPanel(AudioEngine& engine)
         const juce::String name = deviceCombo.getText();
         if (name.isNotEmpty())
         {
-            audioEngine.setInputDevice(name);
+            const auto error = audioEngine.setInputDevice(name);
+            if (error.isNotEmpty() || audioEngine.getCurrentInputDeviceName() != name)
+            {
+                // Show what is really open (possibly nothing) and say why.
+                // An empty box also lets the user pick the same item again:
+                // re-selecting the shown item does not fire onChange.
+                refreshDeviceList();
+                if (onDeviceError) onDeviceError(error);
+                return;
+            }
+
+            if (onDeviceChosen) onDeviceChosen(name);
             if (onSettingsChanged) onSettingsChanged();
         }
     };
@@ -84,8 +95,17 @@ void InputPanel::setDevice(const juce::String& deviceName)
 {
     auto devices = audioEngine.getInputDevices();
     int idx = devices.indexOf(deviceName);
-    if (idx >= 0)
-        deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
+    if (idx < 0)
+        return; // saved device is not plugged in: keep showing the one in use
+
+    // This used to only change what the box displayed. The engine stayed on
+    // the default input, so a user who had picked a USB microphone saw it
+    // selected after a restart and recorded from the built-in one.
+    if (audioEngine.getCurrentInputDeviceName() != deviceName)
+        audioEngine.setInputDevice(deviceName);
+
+    // Show what actually opened, which may not be the saved device.
+    refreshDeviceList();
 }
 
 void InputPanel::setVolume(int value)
@@ -135,12 +155,20 @@ void InputPanel::refreshDeviceList()
     for (int i = 0; i < devices.size(); ++i)
         deviceCombo.addItem(devices[i], i + 1);
 
-    // Re-select device by name if still available
-    int idx = devices.indexOf(currentName);
-    if (idx >= 0)
-        deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
-    else
-        deviceCombo.setSelectedItemIndex(-1, juce::dontSendNotification);
+    // Show the input the engine actually has open — not what the box said
+    // before. At startup the box is empty, and leaving it blank while a
+    // microphone was live (the meter moving) also saved "" as the device, so
+    // it stayed blank on every launch after. Likewise, when a chosen device
+    // fails to open and the system falls back to another, the box must not
+    // keep claiming the one that failed. The old text is only a fallback.
+    // No device open at all (a failed open leaves none): show none, rather
+    // than the name of the device that just failed.
+    const auto open = audioEngine.getCurrentInputDeviceName();
+    int idx = open.isEmpty() ? -1 : devices.indexOf(open);
+    if (idx < 0 && open.isNotEmpty())
+        idx = devices.indexOf(currentName);
+
+    deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
 }
 
 //==============================================================================

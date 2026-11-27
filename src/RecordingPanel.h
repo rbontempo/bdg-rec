@@ -28,6 +28,11 @@ public:
     void stopRecording();
     void setDestFolder(const juce::File& folder);
 
+    // The take has stopped and is being merged (and maybe processed). Freezes
+    // the clock, shows "Saving…" and disables the button until false.
+    void setSaving(bool isSaving);
+    void refreshDiskSpace() { updateDiskSpace(); repaint(); }
+
     // Callback wired up by MainComponent
     std::function<void()> onRecordClicked;
 
@@ -52,6 +57,7 @@ private:
     // Disk space
     juce::File  currentDestFolder;
     int         diskUpdateTick = 0;
+    int         idleDiskTick = 0;
     int         diskWarningLevel{0}; // 0=normal, 1=warning, 2=critical
     juce::Label diskSpaceLabel;
 

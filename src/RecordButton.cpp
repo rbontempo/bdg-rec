@@ -35,12 +35,17 @@ void RecordButton::mouseExit(const juce::MouseEvent&)
 
 void RecordButton::mouseUp(const juce::MouseEvent& e)
 {
+    if (! isEnabled())
+        return;
     if (e.getNumberOfClicks() >= 1 && getLocalBounds().contains(e.getPosition()))
         if (onClick) onClick();
 }
 
 void RecordButton::paint(juce::Graphics& g)
 {
+    // Disabled while a take is being saved: a click there used to land in
+    // the "stop" branch and do nothing at all.
+    g.setOpacity(isEnabled() ? 1.0f : 0.35f);
     const float iconScale = hovered ? 1.15f : 1.0f;
     const float size = 64.0f;
     const float cx   = getWidth()  * 0.5f;

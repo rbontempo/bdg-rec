@@ -17,8 +17,14 @@ public:
         UserRequested,
         DiskFull,
         DeviceLost,
-        DeviceRateChanged
+        DeviceRateChanged,
+        WriteFailed      // the disk refused a new chunk (not necessarily full)
     };
+
+    // Whether the open input is actually delivering audio. A microphone
+    // without macOS permission opens fine and delivers exact digital zeros;
+    // a wedged device stops calling back at all. Neither showed on screen.
+    enum class InputHealth { ok, silent, noCallbacks };
 
     //==============================================================================
     class Listener
@@ -42,6 +48,13 @@ public:
         // deleted — they stay in this folder and the orphan-recovery flow can
         // pick them up on the next launch.
         virtual void recordingSaveFailed(const juce::File& preservedChunkFolder) {}
+        // The writer has just closed and the merge is starting. Sent at once,
+        // on the message thread, for every stop path — the UI used to learn
+        // about an automatic stop only after the merge, and kept showing a
+        // running take (clock, waveform, Stop button) the whole time.
+        virtual void recordingStopping(StopReason reason) {}
+        // Sent when InputHealth changes (checked about once a second).
+        virtual void inputHealthChanged(InputHealth health) {}
     };
 
     //==============================================================================
@@ -57,7 +70,9 @@ public:
     // was another permission window in the user's face. Hot-plug invalidates
     // it, which is the only moment a rescan is actually needed.
     juce::StringArray getInputDevices();
-    void setInputDevice(const juce::String& name);
+    // Returns the error text, empty on success. On failure JUCE may leave no
+    // device open at all, so the caller must re-read what is current.
+    juce::String setInputDevice(const juce::String& name);
     juce::String getCurrentInputDeviceName() const;
 
     // Coarse device class ("builtin" / "usb" / "bluetooth" / "other" / "none").
@@ -109,6 +124,13 @@ public:
     // which is the very thing the snapshot exists to avoid.
     double getTakeSampleRate() const { return pendingSave.sampleRate; }
 
+    // Samples in the last merged take (0 = nothing was captured), and whether
+    // any of them was not digital silence.
+    juce::int64 getLastTakeSamples() const { return lastTakeSamples.load(); }
+    bool        lastTakeHadSignal() const  { return takeHadSignal.load(); }
+
+    InputHealth getInputHealth() const { return inputHealth; }
+
     //==============================================================================
     // DSP processing (runs on background thread)
     void processRecording(const juce::File& file,
@@ -141,13 +163,16 @@ public:
     // Task 3: Post-crash recovery
     juce::Array<juce::File> findOrphanedRecordings(const juce::File& destFolder);
     // Blocking; copies the whole take. Tests and recoverRecordingAsync use it.
-    juce::File recoverRecording(const juce::File& orphanedChunkFolder);
+    // `unreadableChunks`, when given, receives how many chunks had to be
+    // skipped; the folder is then kept and the result is only partial.
+    juce::File recoverRecording(const juce::File& orphanedChunkFolder,
+                                int* unreadableChunks = nullptr);
     // Same, on a background thread — copying a long take on the message
     // thread froze the app, which is exactly what SaveThread exists to avoid.
     // `onDone` runs on the message thread with the recovered file, or an
     // empty File on failure. Not called if the engine is destroyed first.
     void recoverRecordingAsync(const juce::File& orphanedChunkFolder,
-                               std::function<void(const juce::File&)> onDone);
+                               std::function<void(const juce::File&, int unreadableChunks)> onDone);
     bool isRecovering() const { return recoveryThread != nullptr && recoveryThread->isThreadRunning(); }
     void discardRecording(const juce::File& orphanedChunkFolder);
 
@@ -217,6 +242,18 @@ private:
     // is reportable instead of silent.
     std::atomic<juce::int64> droppedSamples{0};
 
+    // Input health. Written by the audio thread, read by the timer.
+    std::atomic<juce::int64> callbackSamples{0};   // everything delivered
+    std::atomic<juce::int64> silentRun{0};         // consecutive exact-zero samples
+    std::atomic<bool>        takeHadSignal{false}; // any non-zero sample this take
+    std::atomic<juce::int64> lastTakeSamples{-1};
+    juce::int64 lastSeenCallbackSamples = 0;
+    int         stalledSeconds = 0;
+    int         healthTicks = 0;
+    InputHealth inputHealth = InputHealth::ok;
+    void        updateInputHealth();
+    bool        freeSpaceIsLow() const;
+
     // One always-on timer at 20 Hz: it publishes the VU levels (so the audio
     // thread never has to post a message) and, while recording, checks the
     // rotation flag every tick and the disk every 200th — the original 10 s.
@@ -237,6 +274,7 @@ private:
     {
         juce::File file;
         bool ok = false;
+        juce::int64 samples = 0;
     };
 
     bool openNextChunk();

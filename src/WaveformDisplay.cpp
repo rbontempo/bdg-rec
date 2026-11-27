@@ -72,7 +72,7 @@ void WaveformDisplay::paint(juce::Graphics& g)
         // "Pronto para gravar" text below logo
         g.setColour(juce::Colours::white.withAlpha(0.35f));
         g.setFont(juce::FontOptions().withHeight(12.0f));
-        g.drawText(Strings::get().prontoGravar,
+        g.drawText(saving ? Strings::get().salvando : Strings::get().prontoGravar,
                    bounds.removeFromBottom(30.0f),
                    juce::Justification::centred, false);
     }

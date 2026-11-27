@@ -17,6 +17,7 @@ void UpdateChecker::checkIfDue(juce::ApplicationProperties& props,
 {
     appProps = &props;
     callback = std::move(onUpdateAvailable);
+    noUpdateCallback = {};   // the weekly check never answers "no update"
 
     if (auto* pf = props.getUserSettings())
     {
@@ -32,7 +33,8 @@ void UpdateChecker::checkIfDue(juce::ApplicationProperties& props,
     startThread(juce::Thread::Priority::low);
 }
 
-void UpdateChecker::forceCheck(std::function<void(juce::String)> onUpdateAvailable)
+void UpdateChecker::forceCheck(std::function<void(juce::String)> onUpdateAvailable,
+                               std::function<void(bool)> onNoUpdate)
 {
     if (isThreadRunning())
         return; // already checking
@@ -45,7 +47,15 @@ void UpdateChecker::forceCheck(std::function<void(juce::String)> onUpdateAvailab
         return;
     if (onUpdateAvailable)
         callback = std::move(onUpdateAvailable);
+    noUpdateCallback = std::move(onNoUpdate);
     startThread(juce::Thread::Priority::low);
+}
+
+void UpdateChecker::reportNoUpdate(bool reachable)
+{
+    auto cb = std::exchange(noUpdateCallback, {});
+    if (cb && ! threadShouldExit())
+        juce::MessageManager::callAsync([cb, reachable]() { cb(reachable); });
 }
 
 void UpdateChecker::run()
@@ -61,7 +71,10 @@ void UpdateChecker::run()
 
     auto stream = url.createInputStream(options);
     if (stream == nullptr || threadShouldExit())
-        return; // no internet, or we are shutting down — fail silently
+    {
+        reportNoUpdate(false); // silent for the weekly check, answered for the menu
+        return;
+    }
 
     auto response = stream->readEntireStreamAsString();
     if (threadShouldExit())
@@ -70,7 +83,10 @@ void UpdateChecker::run()
 
     auto tagName = json.getProperty("tag_name", "").toString();
     if (tagName.isEmpty())
+    {
+        reportNoUpdate(false);
         return;
+    }
 
     // Strip leading 'v' if present
     if (tagName.startsWithChar('v') || tagName.startsWithChar('V'))
@@ -86,7 +102,14 @@ void UpdateChecker::run()
         pf->saveIfNeeded();
     }
 
-    if (isNewerVersion(tagName, currentVersion) && callback)
+    if (! isNewerVersion(tagName, currentVersion))
+    {
+        reportNoUpdate(true);
+        return;
+    }
+
+    noUpdateCallback = {};
+    if (callback)
     {
         auto ver = tagName;
         auto cb = callback;

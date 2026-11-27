@@ -32,6 +32,13 @@ public:
 
     // Callback for settings changes (Task 18)
     std::function<void()> onSettingsChanged;
+    // The user picked a folder in the chooser (not a restore from settings).
+    std::function<void()> onFolderChosen;
+
+    // While a take is recording or saving, the folder cannot change: the take
+    // keeps going to the old one, and the box and the free-space figure used
+    // to switch to the new one anyway.
+    void setRecordingActive(bool active) { folderButton.setEnabled(! active); repaint(); }
 
     void setSampleRate(int sr) { actualSampleRate = sr; repaint(); }
 
@@ -44,7 +51,7 @@ private:
         std::function<void()> onClick;
         void mouseDown(const juce::MouseEvent&) override
         {
-            if (onClick) onClick();
+            if (isEnabled() && onClick) onClick();
         }
         void paint(juce::Graphics& g) override
         {

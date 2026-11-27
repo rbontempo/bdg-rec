@@ -58,9 +58,22 @@ MainComponent::MainComponent()
         recordingPanel.setDestFolder(outputPanel.getDestFolder());
         saveSettings();
     };
+    outputPanel.onFolderChosen = [this]() { destFolderUnavailable = false; };
+
+    inputPanel.onDeviceChosen = [this](const juce::String& name) { chosenInputDevice = name; };
+    inputPanel.onDeviceError  = [this](const juce::String& error)
+    {
+        inlineWarning.show(Strings::get().falhaAbrirDispositivo + error, InlineWarning::Error, 0);
+        if (auto* dev = audioEngine.getDeviceManager().getCurrentAudioDevice())
+            outputPanel.setSampleRate((int) dev->getCurrentSampleRate());
+    };
 
     // Task 18 – load saved settings and apply to UI
     loadSettings();
+
+    // Widgets and menus took their text from the default language while they
+    // were being built; a saved English setting left half the UI in Portuguese.
+    refreshLanguageUi();
 
     // Touch the destination folder exactly once, after construction, so the
     // permission prompt happens a single time instead of once per probe.
@@ -112,6 +125,15 @@ void MainComponent::showTakeResult(const juce::File& file)
     const juce::String saved =
         Strings::get().salvoNaPasta + file.getParentDirectory().getFileName();
 
+    // Every sample was exact digital zero — what a microphone without
+    // permission delivers. The file exists, but "saved successfully" alone
+    // hid that it holds nothing.
+    if (! audioEngine.lastTakeHadSignal())
+    {
+        inlineWarning.show(Strings::get().takeSilencioso, InlineWarning::Warning, 0);
+        return;
+    }
+
     if (lastTakeDropped <= 0)
     {
         inlineWarning.show(saved, InlineWarning::Info);
@@ -134,13 +156,27 @@ void MainComponent::showTakeResult(const juce::File& file)
 void MainComponent::openDestFolderOnce()
 {
     if (savedDestFolder == juce::File())
-        return;   // never configured: nothing to probe, no prompt on first run
+    {
+        scanForOrphans({});   // never configured, but failed merges may exist elsewhere
+        return;   // nothing to probe, no prompt on first run
+    }
 
     // Exactly one probe. If it is refused, the folder stays unconfigured and
     // the user picks one from the UI — the file chooser grants access without
     // a TCC prompt.
     if (! savedDestFolder.isDirectory())
+    {
+        // Typically an external drive that is not plugged in. Say so, and
+        // keep the saved path: the next saveSettings() must not replace it
+        // with the fallback the box is now showing.
+        destFolderUnavailable = true;
+        inlineWarning.show(Strings::get().pastaIndisponivel
+                               .replace("%F", savedDestFolder.getFullPathName())
+                               .replace("%D", outputPanel.getDestFolder().getFullPathName()),
+                           InlineWarning::Warning, 0);
+        scanForOrphans({});
         return;
+    }
 
     outputPanel.setDestFolder(savedDestFolder);
 
@@ -154,8 +190,37 @@ void MainComponent::openDestFolderOnce()
         if (! aliveFlag->load()) return;
 
         recordingPanel.setDestFolder(folder);
-        promptForOrphans(audioEngine.findOrphanedRecordings(folder), 0);
+        scanForOrphans(folder);
     });
+}
+
+void MainComponent::scanForOrphans(const juce::File& destFolderOrNone)
+{
+    juce::Array<juce::File> orphans;
+    if (destFolderOrNone != juce::File())
+        orphans.addArray(audioEngine.findOrphanedRecordings(destFolderOrNone));
+
+    // Failed merges remembered from earlier sessions. Entries that are gone
+    // (recovered or discarded) are dropped.
+    juce::StringArray stillPending;
+    for (const auto& path : pendingChunkFolders)
+    {
+        const juce::File folder(path);
+        if (! folder.isDirectory())
+            continue;
+        stillPending.add(path);
+        for (const auto& f : audioEngine.findOrphanedRecordings(folder.getParentDirectory()))
+            if (f == folder)
+                orphans.addIfNotAlreadyThere(f);
+    }
+
+    if (stillPending != pendingChunkFolders)
+    {
+        pendingChunkFolders = stillPending;
+        saveSettings();
+    }
+
+    promptForOrphans(orphans, 0);
 }
 
 //==============================================================================
@@ -186,14 +251,21 @@ void MainComponent::promptForOrphans(juce::Array<juce::File> orphans, int index)
         {
             // Copying a long take takes a while; do it off the message thread
             // and only move on to the next orphan once this one is done.
-            inlineWarning.show(Strings::get().recuperando, InlineWarning::Info);
+            // Stays up until the result replaces it: with the default 5 s it
+            // vanished while a long take was still being copied.
+            inlineWarning.show(Strings::get().recuperando, InlineWarning::Info, 0);
             audioEngine.recoverRecordingAsync(folder,
-                [this, aliveFlag, orphans, index](const juce::File& recovered)
+                [this, aliveFlag, orphans, index](const juce::File& recovered, int unreadable)
                 {
                     if (! aliveFlag->load())
                         return;
 
-                    if (recovered.existsAsFile())
+                    if (recovered.existsAsFile() && unreadable > 0)
+                        inlineWarning.show(
+                            Strings::get().recuperacaoParcial.replace("%N", juce::String(unreadable))
+                                + "  " + recovered.getFileName(),
+                            InlineWarning::Warning, 0);
+                    else if (recovered.existsAsFile())
                         inlineWarning.show(
                             Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
                     else
@@ -240,6 +312,12 @@ void MainComponent::installMacMenu()
 
 void MainComponent::applyLanguageChange()
 {
+    refreshLanguageUi();
+    saveSettings();
+}
+
+void MainComponent::refreshLanguageUi()
+{
     // One place for every widget that has to be told. The header button and
     // the menu item used to do this separately and had already drifted apart,
     // and neither refreshed InputPanel's buttons or the DSP step names —
@@ -254,7 +332,6 @@ void MainComponent::applyLanguageChange()
     installMacMenu();   // the Apple menu is a copy; rebuild it too
 #endif
     updateAnalyticsContext();   // locale is part of the analytics context
-    saveSettings();
 }
 
 //==============================================================================
@@ -278,9 +355,11 @@ void MainComponent::saveSettings()
 {
     if (auto* props = appProperties.getUserSettings())
     {
-        props->setValue("inputDevice",     inputPanel.getDeviceComboText());
+        props->setValue("inputDevice",     chosenInputDevice);
         props->setValue("volume",          (int)inputPanel.getVolumeValue());
-        props->setValue("destFolder",      outputPanel.getDestFolder().getFullPathName());
+        if (! destFolderUnavailable)
+            props->setValue("destFolder",  outputPanel.getDestFolder().getFullPathName());
+        props->setValue("pendingChunkFolders", pendingChunkFolders.joinIntoString("\n"));
         props->setValue("normalize",       outputPanel.isNormalizeOn());
         props->setValue("noiseReduction",  outputPanel.isNoiseReductionOn());
         props->setValue("compressor",      outputPanel.isCompressorOn());
@@ -296,8 +375,12 @@ void MainComponent::loadSettings()
     {
         // Input device
         juce::String device = props->getValue("inputDevice", "");
+        chosenInputDevice = device;
         if (device.isNotEmpty())
             inputPanel.setDevice(device);
+
+        pendingChunkFolders = juce::StringArray::fromLines(props->getValue("pendingChunkFolders", ""));
+        pendingChunkFolders.removeEmptyStrings();
 
         // Volume (default 100)
         int vol = props->getIntValue("volume", 100);
@@ -338,6 +421,15 @@ void MainComponent::devicesChanged()
     // Refresh the input device ComboBox
     inputPanel.refreshDeviceList();
 
+    // The format box showed the rate read once at startup. Switching to a
+    // 48 kHz USB microphone left it saying 44.1 kHz — the file is written at
+    // the device's real rate, so the box was simply wrong.
+    if (auto* dev = audioEngine.getDeviceManager().getCurrentAudioDevice())
+        outputPanel.setSampleRate((int) dev->getCurrentSampleRate());
+
+    // Hot-plug and fallbacks change the device class reported with events.
+    updateAnalyticsContext();
+
     // A disconnect during recording is stopped and reported by the engine
     // through recordingFinished(StopReason::DeviceLost), which also logs the
     // analytics event and carries the salvaged file — nothing to do here.
@@ -348,7 +440,9 @@ void MainComponent::devicesChanged()
 //==============================================================================
 void MainComponent::diskSpaceWarning(int remainingMinutes)
 {
-    if (remainingMinutes <= 10 && !diskWarningShown)
+    // Re-shown on every update while low, so the minutes keep counting down;
+    // the first figure used to stay on screen until the take ended.
+    if (remainingMinutes <= 10 && isRecording)
     {
         diskWarningShown = true;
         auto aliveFlag = uiAlive;
@@ -369,8 +463,15 @@ void MainComponent::recordingSaveFailed(const juce::File& preservedChunkFolder)
 
         isRecording = false;
         inputPanel.setRecordingActive(false);
-        recordingPanel.stopRecording();
+        outputPanel.setRecordingActive(false);
+        recordingPanel.setSaving(false);
         inlineWarning.hide();
+        healthWarningShown = false;
+
+        // Remembered so the next launch finds it even if the destination
+        // folder changes in between.
+        pendingChunkFolders.addIfNotAlreadyThere(preservedChunkFolder.getFullPathName());
+        saveSettings();
 
         analyticsReporter.trackEvent("error", [&]() {
             auto extra = new juce::DynamicObject();
@@ -395,8 +496,25 @@ void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopR
 
         isRecording = false;
         inputPanel.setRecordingActive(false);
-        recordingPanel.stopRecording();
+        outputPanel.setRecordingActive(false);
         inlineWarning.hide();
+        healthWarningShown = false;
+
+        // Nothing at all reached the disk (the device never delivered a
+        // block). "Saved successfully" used to be shown for a 44-byte file.
+        if (audioEngine.getLastTakeSamples() == 0)
+        {
+            recordingPanel.setSaving(false);
+            file.deleteFile();
+            analyticsReporter.trackEvent("error", [&]() {
+                auto extra = new juce::DynamicObject();
+                extra->setProperty("error_code", "empty_take");
+                return juce::var(extra);
+            }());
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                "BDG rec", Strings::get().nadaGravado);
+            return;
+        }
 
         // Everything the four stop paths used to duplicate now lives here,
         // keyed on why the recording ended.
@@ -427,6 +545,16 @@ void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopR
                 }());
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
                     "BDG rec", Strings::get().gravacaoParadaDispositivo);
+                break;
+
+            case AudioEngine::StopReason::WriteFailed:
+                analyticsReporter.trackEvent("error", [&]() {
+                    auto extra = new juce::DynamicObject();
+                    extra->setProperty("error_code", "chunk_write_failed");
+                    return juce::var(extra);
+                }());
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "BDG rec", Strings::get().gravacaoParadaEscrita);
                 break;
 
             case AudioEngine::StopReason::UserRequested:
@@ -468,6 +596,14 @@ void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopR
         if (reason == AudioEngine::StopReason::UserRequested
             && (doNorm || doNoise || doComp || doDeEss))
         {
+            // Overlay up now, with exactly the treatments being run. It used
+            // to wait for dspStarted, which only arrives after the whole file
+            // is read into memory — seconds in which the UI looked idle and a
+            // new take could be started underneath it.
+            runningDsp = { doNorm, doNoise, doComp, doDeEss };
+            dspOverlay.show(doNorm, doNoise, doComp, doDeEss);
+            resized();
+
             // No try/catch here: processRecording() only spawns the DSP thread,
             // and an exception thrown on that thread cannot travel back to this
             // call site. The guard that actually catches it lives inside
@@ -476,6 +612,7 @@ void MainComponent::recordingFinished(const juce::File& file, AudioEngine::StopR
         }
         else
         {
+            recordingPanel.setSaving(false);
             showTakeResult(file);
             file.revealToUser();
 
@@ -584,6 +721,16 @@ void MainComponent::handleRecordButtonClicked()
             isRecording = true;
             diskWarningShown = false;
             inputPanel.setRecordingActive(true);
+            outputPanel.setRecordingActive(true);
+
+            // Recording from an input that delivers pure silence is allowed
+            // (a loopback device may be quiet until playback starts), but not
+            // without saying so.
+            if (audioEngine.getInputHealth() == AudioEngine::InputHealth::silent)
+            {
+                inlineWarning.show(Strings::get().micSilencioso, InlineWarning::Warning, 0);
+                healthWarningShown = true;
+            }
 
             // Persist destFolder now. Crash recovery only scans when this key
             // exists (to avoid provoking the macOS folder-permission dialog on
@@ -605,8 +752,9 @@ void MainComponent::handleRecordButtonClicked()
         // Fire and forget: merging the chunks can take a while on a long take,
         // so it runs in the background and everything that follows a stop is
         // handled in recordingFinished().
+        // The panel switches to "Saving…" from recordingStopping(), which
+        // every stop path (this one and the automatic ones) goes through.
         audioEngine.stopRecordingAsync(AudioEngine::StopReason::UserRequested);
-        recordingPanel.stopRecording();
     }
 }
 
@@ -619,11 +767,12 @@ void MainComponent::dspStarted()
     juce::MessageManager::callAsync([this, aliveFlag]()
     {
         if (! aliveFlag->load()) return;
-        dspOverlay.show(outputPanel.isNormalizeOn(),
-                        outputPanel.isNoiseReductionOn(),
-                        outputPanel.isCompressorOn(),
-                        outputPanel.isDeEsserOn());
-        resized(); // ensure overlay covers full window
+        if (! dspOverlay.isVisible())   // normally already up since recordingFinished
+        {
+            dspOverlay.show(runningDsp.normalize, runningDsp.noise,
+                            runningDsp.compressor, runningDsp.deEsser);
+            resized(); // ensure overlay covers full window
+        }
     });
 }
 
@@ -644,17 +793,18 @@ void MainComponent::dspFinished(const juce::File& file)
     {
         if (! aliveFlag->load()) return;
         dspOverlay.hide();
+        recordingPanel.setSaving(false);
         showTakeResult(file);
         file.revealToUser();
 
-        // Track DSP applied
+        // Track DSP applied — what actually ran, not the toggles now.
         {
             auto extra = new juce::DynamicObject();
             juce::Array<juce::var> effects;
-            if (outputPanel.isNormalizeOn())      effects.add("normalize");
-            if (outputPanel.isNoiseReductionOn()) effects.add("denoise");
-            if (outputPanel.isCompressorOn())     effects.add("compress");
-            if (outputPanel.isDeEsserOn())        effects.add("deesser");
+            if (runningDsp.normalize)  effects.add("normalize");
+            if (runningDsp.noise)      effects.add("denoise");
+            if (runningDsp.compressor) effects.add("compress");
+            if (runningDsp.deEsser)    effects.add("deesser");
             extra->setProperty("effects", effects);
             analyticsReporter.trackEvent("dsp_applied", juce::var(extra));
         }
@@ -675,8 +825,9 @@ void MainComponent::dspError(const juce::String& error)
     {
         if (! aliveFlag->load()) return;
         dspOverlay.hide();
+        recordingPanel.setSaving(false);
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-            "BDG rec", Strings::get().erroProcessamento + error);
+            "BDG rec", Strings::get().erroProcessamento + dspErrorText(error));
 
         // The take itself survived — the DSP works on a copy and only replaces
         // the original on success. Say where it is, and do not swallow the
@@ -687,7 +838,7 @@ void MainComponent::dspError(const juce::String& error)
         analyticsReporter.trackEvent("error", [&]() {
             auto extra = new juce::DynamicObject();
             extra->setProperty("error_code", "dsp_crash");
-            extra->setProperty("message", error);
+            extra->setProperty("message", error);   // a fixed code, never free text
             return juce::var(extra);
         }());
     });
@@ -776,7 +927,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const juce
         menu.addSeparator();
         // Lives here rather than in the Apple menu because that one is built
         // once at startup, which would freeze the tick mark.
-        menu.addItem(idAnalytics, s.menuAnalytics, true, analyticsReporter.isEnabled());
+        menu.addItem(idAnalytics, s.menuAnalytics, true, analyticsReporter.isEnabled() && analyticsReporter.hasAskedConsent());
     }
 #else
     if (topLevelMenuIndex == 0) // BDG rec
@@ -792,7 +943,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const juce
         menu.addSubMenu(s.menuLanguage, langMenu);
 
         menu.addSeparator();
-        menu.addItem(idAnalytics, s.menuAnalytics, true, analyticsReporter.isEnabled());
+        menu.addItem(idAnalytics, s.menuAnalytics, true, analyticsReporter.isEnabled() && analyticsReporter.hasAskedConsent());
         menu.addSeparator();
         menu.addItem(idQuit, s.menuQuit);
     }
@@ -814,8 +965,22 @@ void MainComponent::menuItemSelected(int menuItemID, int)
             showAboutDialog();
             break;
         case idCheckUpdates:
-            updateChecker.forceCheck();
+        {
+            auto aliveFlag = uiAlive;
+            updateChecker.forceCheck(
+                [this, aliveFlag](juce::String v) { if (aliveFlag->load()) showUpdateDialog(v); },
+                [aliveFlag](bool reachable)
+                {
+                    if (! aliveFlag->load()) return;
+                    auto& s = Strings::get();
+                    BdgDialogContent::launch(s.menuCheckUpdates.trimCharactersAtEnd("."),
+                        new BdgDialogContent({},
+                            reachable ? s.atualizado.replace("%CUR%", JUCE_APPLICATION_VERSION_STRING)
+                                      : s.falhaVerificarAtualizacao,
+                            { { "OK", true, {} } }));
+                });
             break;
+        }
         case idLangPT:
             Strings::setLanguage(Language::PT);
             applyLanguageChange();
@@ -836,7 +1001,7 @@ void MainComponent::menuItemSelected(int menuItemID, int)
         case idAnalytics:
             // The consent dialog tells the user they can change their mind
             // from the menu — this is that control.
-            analyticsReporter.setConsent(! analyticsReporter.isEnabled());
+            analyticsReporter.setConsent(! analyticsReporter.isEnabled() && analyticsReporter.hasAskedConsent());
             menuItemsChanged();
             break;
         default:
@@ -852,4 +1017,49 @@ void MainComponent::showAboutDialog()
         new BdgDialogContent(juce::String("v") + JUCE_APPLICATION_VERSION_STRING,
                              s.aboutBody,
                              { { "OK", true, {} } }));
+}
+
+//==============================================================================
+// Stop / input-health notifications
+//==============================================================================
+void MainComponent::recordingStopping(AudioEngine::StopReason)
+{
+    // Every stop path comes through here the moment the writer closes. The
+    // clock freezes, the panel says "Saving…" and the button is disabled
+    // until recordingFinished / recordingSaveFailed — previously an automatic
+    // stop left the take looking live for the whole merge, and a manual one
+    // showed "Ready to record" while the Record button did nothing.
+    recordingPanel.setSaving(true);
+}
+
+void MainComponent::inputHealthChanged(AudioEngine::InputHealth health)
+{
+    auto& s = Strings::get();
+    switch (health)
+    {
+        case AudioEngine::InputHealth::silent:
+            inlineWarning.show(s.micSilencioso, InlineWarning::Warning, 0);
+            healthWarningShown = true;
+            break;
+        case AudioEngine::InputHealth::noCallbacks:
+            inlineWarning.show(s.micSemResposta, InlineWarning::Error, 0);
+            healthWarningShown = true;
+            break;
+        case AudioEngine::InputHealth::ok:
+            if (healthWarningShown)
+                inlineWarning.hide();
+            healthWarningShown = false;
+            break;
+    }
+}
+
+juce::String MainComponent::dspErrorText(const juce::String& code) const
+{
+    auto& s = Strings::get();
+    if (code == "read_failed")   return s.erroLeitura;
+    if (code == "too_large")     return s.erroArquivoGrande;
+    if (code == "no_memory")     return s.erroMemoria;
+    if (code == "cancelled")     return s.erroCancelado;
+    if (code == "write_failed")  return s.erroEscritaDsp;
+    return s.erroDesconhecido;
 }

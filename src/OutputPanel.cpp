@@ -101,6 +101,7 @@ void OutputPanel::openFolderChooser()
             {
                 destFolder = result;
                 repaint();
+                if (onFolderChosen) onFolderChosen();
                 if (onSettingsChanged) onSettingsChanged();
             }
         });
@@ -227,7 +228,11 @@ void OutputPanel::paint(juce::Graphics& g)
         g.drawRoundedRectangle(box.reduced(0.5f), corner, 1.0f);
         g.setFont(juce::FontOptions().withHeight(12.0f));
         g.setColour(juce::Colours::white);
-        juce::String formatStr = juce::String(actualSampleRate / 1000) + "kHz / MONO / 24 bits / WAV";
+        // 44100 is "44.1kHz", not "44kHz": integer division dropped the .1.
+        const double khz = actualSampleRate / 1000.0;
+        const auto khzText = (actualSampleRate % 1000 == 0) ? juce::String(actualSampleRate / 1000)
+                                                             : juce::String(khz, 1);
+        juce::String formatStr = khzText + "kHz / MONO / 24 bits / WAV";
         g.drawText(formatStr, box.withTrimmedLeft(10.0f), juce::Justification::centredLeft, false);
     }
 
