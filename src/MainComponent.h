@@ -32,6 +32,8 @@ public:
     void diskSpaceWarning(int remainingMinutes) override; // Task 2
     void recordingFinished(const juce::File& file, AudioEngine::StopReason reason) override;
     void recordingSaveFailed(const juce::File& preservedChunkFolder) override;
+    void recordingStopping(AudioEngine::StopReason reason) override;
+    void inputHealthChanged(AudioEngine::InputHealth health) override;
 
 private:
     BdgLookAndFeel bdgLookAndFeel;
@@ -58,6 +60,34 @@ private:
     double         lastTakeRate = 0.0;
     bool           isRecording = false;
     bool           diskWarningShown = false;
+
+    // The treatments actually handed to the DSP for the take being processed.
+    // The overlay and the "dsp_applied" event used to re-read the toggles,
+    // which the user may have changed in the meantime.
+    struct DspFlags { bool normalize = false, noise = false, compressor = false, deEsser = false; };
+    DspFlags       runningDsp;
+
+    // The device the user actually chose (and that opened). Persisted instead
+    // of whatever the box shows, which can be a fallback.
+    juce::String   chosenInputDevice;
+
+    // The saved folder was missing at startup (external drive unplugged). The
+    // app falls back to the default, but must not overwrite the user's choice
+    // in the settings until they pick a folder themselves.
+    bool           destFolderUnavailable = false;
+
+    // Chunk folders whose merge failed. Scanned at every launch, wherever they
+    // are — the promise "it will be recovered next time" used to depend on the
+    // destination folder still being the same.
+    juce::StringArray pendingChunkFolders;
+    void scanForOrphans(const juce::File& destFolderOrNone);
+
+    // Whether the inline warning currently shows an input-health message.
+    bool           healthWarningShown = false;
+
+    // Language-dependent UI refresh, without saving (used at startup too).
+    void refreshLanguageUi();
+    juce::String dspErrorText(const juce::String& code) const;
 
     void handleRecordButtonClicked();
     void updateAnalyticsContext();

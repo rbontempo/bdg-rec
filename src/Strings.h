@@ -42,6 +42,8 @@ struct StringTable
     juce::String menuAnalytics;
     // Shown when the write path could not keep up with the disk
     juce::String amostrasPerdidas;
+    // UI state that has to match what the engine is really doing
+    juce::String salvando, nadaGravado, takeSilencioso, micSilencioso, micSemResposta, falhaAbrirDispositivo, pastaIndisponivel, recuperacaoParcial, atualizado, falhaVerificarAtualizacao, gravacaoParadaEscrita, erroLeitura, erroArquivoGrande, erroMemoria, erroCancelado, erroEscritaDsp;
 };
 
 namespace Strings
@@ -135,6 +137,22 @@ namespace Strings
         .menuAnalytics = juce::CharPointer_UTF8 ("Enviar dados de uso an\xc3\xb4" "nimos"),
         .amostrasPerdidas = juce::CharPointer_UTF8 ("Aten\xc3\xa7\xc3\xa3" "o: o disco n\xc3\xa3" "o acompanhou a grava\xc3\xa7\xc3\xa3" "o e "
                                 "aproximadamente %S segundos de \xc3\xa1" "udio se perderam."),
+        .salvando = juce::CharPointer_UTF8 ("Salvando grava\xc3\xa7" "\xc3\xa3" "o..."),
+        .nadaGravado = juce::CharPointer_UTF8 ("Nenhum \xc3\xa1" "udio foi capturado, ent\xc3\xa3" "o nada foi salvo. Confira o microfone e a permiss\xc3\xa3" "o em Ajustes do Sistema > Privacidade e Seguran\xc3\xa7" "a > Microfone."),
+        .takeSilencioso = juce::CharPointer_UTF8 ("O arquivo foi salvo, mas est\xc3\xa1" " em sil\xc3\xaa" "ncio total. Confira o microfone e a permiss\xc3\xa3" "o em Ajustes do Sistema > Privacidade e Seguran\xc3\xa7" "a > Microfone."),
+        .micSilencioso = juce::CharPointer_UTF8 ("O microfone n\xc3\xa3" "o est\xc3\xa1" " enviando som. Confira a permiss\xc3\xa3" "o em Ajustes do Sistema > Privacidade e Seguran\xc3\xa7" "a > Microfone, ou escolha outro dispositivo."),
+        .micSemResposta = juce::CharPointer_UTF8 ("O dispositivo de \xc3\xa1" "udio parou de responder. Reconecte-o ou escolha outro."),
+        .falhaAbrirDispositivo = juce::CharPointer_UTF8 ("N\xc3\xa3" "o foi poss\xc3\xad" "vel abrir este dispositivo: "),
+        .pastaIndisponivel = juce::CharPointer_UTF8 ("A pasta %F n\xc3\xa3" "o est\xc3\xa1" " dispon\xc3\xad" "vel. As grava\xc3\xa7" "\xc3\xb5" "es v\xc3\xa3" "o para %D at\xc3\xa9" " voc\xc3\xaa" " escolher outra."),
+        .recuperacaoParcial = juce::CharPointer_UTF8 ("Recuperado em parte: %N trecho(s) n\xc3\xa3" "o puderam ser lidos. A pasta original foi mantida ao lado do arquivo."),
+        .atualizado = juce::CharPointer_UTF8 ("Voc\xc3\xaa" " j\xc3\xa1" " est\xc3\xa1" " na vers\xc3\xa3" "o mais recente (%CUR%)."),
+        .falhaVerificarAtualizacao = juce::CharPointer_UTF8 ("N\xc3\xa3" "o foi poss\xc3\xad" "vel verificar atualiza\xc3\xa7" "\xc3\xb5" "es. Confira sua conex\xc3\xa3" "o."),
+        .gravacaoParadaEscrita = juce::CharPointer_UTF8 ("A grava\xc3\xa7" "\xc3\xa3" "o foi encerrada porque n\xc3\xa3" "o foi poss\xc3\xad" "vel continuar escrevendo no disco. O que j\xc3\xa1" " havia sido gravado foi salvo."),
+        .erroLeitura = juce::CharPointer_UTF8 ("n\xc3\xa3" "o foi poss\xc3\xad" "vel ler o arquivo gravado."),
+        .erroArquivoGrande = juce::CharPointer_UTF8 ("o arquivo \xc3\xa9" " grande demais para processar (mais de 6 horas)."),
+        .erroMemoria = juce::CharPointer_UTF8 ("n\xc3\xa3" "o h\xc3\xa1" " mem\xc3\xb3" "ria suficiente. Tente desativar alguns tratamentos."),
+        .erroCancelado = "processamento cancelado.",
+        .erroEscritaDsp = juce::CharPointer_UTF8 ("n\xc3\xa3" "o foi poss\xc3\xad" "vel gravar o arquivo tratado (disco cheio?). A grava\xc3\xa7" "\xc3\xa3" "o original foi mantida sem altera\xc3\xa7" "\xc3\xa3" "o."),
     };
 
     // English table
@@ -225,6 +243,22 @@ namespace Strings
         .menuAnalytics = "Send anonymous usage data",
         .amostrasPerdidas = "Warning: the disk could not keep up and roughly %S seconds "
                             "of audio were lost.",
+        .salvando = "Saving recording...",
+        .nadaGravado = "No audio was captured, so nothing was saved. Check the microphone and its permission in System Settings > Privacy & Security > Microphone.",
+        .takeSilencioso = "The file was saved, but it is completely silent. Check the microphone and its permission in System Settings > Privacy & Security > Microphone.",
+        .micSilencioso = "The microphone is not sending any sound. Check its permission in System Settings > Privacy & Security > Microphone, or pick another device.",
+        .micSemResposta = "The audio device stopped responding. Reconnect it or pick another one.",
+        .falhaAbrirDispositivo = "Could not open this device: ",
+        .pastaIndisponivel = "The folder %F is not available. Recordings will go to %D until you pick another one.",
+        .recuperacaoParcial = "Partially recovered: %N segment(s) could not be read. The original folder was kept next to the file.",
+        .atualizado = "You already have the latest version (%CUR%).",
+        .falhaVerificarAtualizacao = "Could not check for updates. Check your connection.",
+        .gravacaoParadaEscrita = "Recording stopped because the app could no longer write to the disk. What had already been recorded was saved.",
+        .erroLeitura = "the recorded file could not be read.",
+        .erroArquivoGrande = "the file is too large to process (over 6 hours).",
+        .erroMemoria = "there is not enough memory. Try turning off some treatments.",
+        .erroCancelado = "processing was cancelled.",
+        .erroEscritaDsp = "the processed file could not be written (disk full?). The original recording was kept unchanged.",
     };
 
     // Current language (default: Portuguese)

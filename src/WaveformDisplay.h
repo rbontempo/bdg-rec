@@ -11,10 +11,14 @@ public:
     void paint(juce::Graphics& g) override;
 
     void setRecording(bool shouldRecord);
+    // Between Stop and the end of the merge: says "Saving…" instead of
+    // "Ready to record", which was untrue while the take was still merging.
+    void setSaving(bool shouldShowSaving) { saving = shouldShowSaving; repaint(); }
     void pushRmsSample(float rms);
 
 private:
     bool isRecording = false;
+    bool saving = false;
     std::deque<float> rmsSamples;
     juce::Image logoImage;
 

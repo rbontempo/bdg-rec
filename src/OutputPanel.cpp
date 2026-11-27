@@ -101,6 +101,7 @@ void OutputPanel::openFolderChooser()
             {
                 destFolder = result;
                 repaint();
+                if (onFolderChosen) onFolderChosen();
                 if (onSettingsChanged) onSettingsChanged();
             }
         });

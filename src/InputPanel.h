@@ -41,6 +41,12 @@ public:
 
     // Callbacks for settings changes (Task 18)
     std::function<void()> onSettingsChanged;
+    // The user chose a device and it opened. Only this is worth persisting:
+    // the box also shows fallbacks (saved device unplugged), and saving those
+    // overwrote the user's real choice.
+    std::function<void(const juce::String&)> onDeviceChosen;
+    // The chosen device could not be opened; carries JUCE's error text.
+    std::function<void(const juce::String&)> onDeviceError;
 
 private:
     AudioEngine& audioEngine;

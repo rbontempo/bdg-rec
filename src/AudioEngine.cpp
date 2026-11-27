@@ -430,7 +430,7 @@ juce::String AudioEngine::getCurrentInputDeviceCategory() const
     return "other";
 }
 
-void AudioEngine::setInputDevice(const juce::String& name)
+juce::String AudioEngine::setInputDevice(const juce::String& name)
 {
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.inputDeviceName  = name;
@@ -451,6 +451,8 @@ void AudioEngine::setInputDevice(const juce::String& name)
             + " inputs=" + juce::String(dev->getActiveInputChannels().countNumberOfSetBits()));
     else
         DBG("  No active device after setInputDevice!");
+
+    return error;
 }
 
 //==============================================================================
@@ -540,6 +542,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
         }
 
         nativeSampleRate.store(newRate);
+        silentRun.store(0);
 
         // Size the downmix scratch buffer here, off the audio thread. Generous
         // headroom over the declared block size so the callback never has to
@@ -573,6 +576,27 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 {
     if (numSamples == 0 || numInputChannels == 0)
         return;
+
+    // Input health: exact digital zero on every channel is what a microphone
+    // without permission delivers. Real inputs always carry some noise, so
+    // the scan almost always stops at the first sample.
+    {
+        bool allZero = true;
+        for (int ch = 0; ch < numInputChannels && allZero; ++ch)
+            if (const float* d = inputChannelData[ch])
+                for (int i = 0; i < numSamples; ++i)
+                    if (d[i] != 0.0f) { allZero = false; break; }
+
+        callbackSamples.fetch_add(numSamples);
+        if (allZero)
+            silentRun.fetch_add(numSamples);
+        else
+        {
+            silentRun.store(0);
+            if (recording.load())
+                takeHadSignal.store(true);
+        }
+    }
 
     const float g = gain.load();
 
@@ -803,6 +827,8 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     }
 
     droppedSamples.store(0);
+    takeHadSignal.store(false);
+    lastTakeSamples.store(-1);
     timerTicks = 0;
 
     recording.store(true);
@@ -1000,6 +1026,7 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks(const SaveJob& job)
     }
 
     result.ok = verified;
+    result.samples = samplesWritten;
 
     DBG("  concatenateChunks: final file = " + finalFile.getFullPathName()
         + " ok=" + juce::String(verified ? "yes" : "no")
@@ -1060,6 +1087,7 @@ juce::File AudioEngine::finaliseSave()
 
     if (result.ok)
     {
+        lastTakeSamples.store(result.samples);
         job.chunkFolder.deleteRecursively();
         return result.file;
     }
@@ -1095,6 +1123,10 @@ void AudioEngine::stopRecordingAsync(StopReason reason)
     if (! finishWriting())
         return;
 
+    // Tell the UI now, not after the merge: the writer is already closed, and
+    // anything said into the microphone from here on is not being recorded.
+    listeners.call(&Listener::recordingStopping, reason);
+
     // Merging the chunks reads and rewrites the entire take — around 2 GB for
     // a two-hour session. Doing that on the message thread froze the app for
     // as long as the copy took, and a user who force-quits a beachballed app
@@ -1116,6 +1148,13 @@ void AudioEngine::timerCallback()
     // ---- UI levels (runs whether or not we are recording) ----
     listeners.call(&Listener::audioLevelsChanged, rmsL.load(), rmsR.load());
 
+    // ---- Input health, about once a second ----
+    if (++healthTicks >= 1000 / kTimerIntervalMs)
+    {
+        healthTicks = 0;
+        updateInputHealth();
+    }
+
     if (!recording.load()) return;
 
     // ---- Chunk rotation (flag raised by the audio thread) ----
@@ -1128,7 +1167,10 @@ void AudioEngine::timerCallback()
         if (! openNextChunk())
         {
             DBG("  chunk rotation failed — stopping recording");
-            stopRecordingAsync(StopReason::DiskFull);
+            // Not necessarily a full disk (permissions, an unplugged drive,
+            // a sync client locking the folder) — the disk check below is
+            // what reports DiskFull.
+            stopRecordingAsync(freeSpaceIsLow() ? StopReason::DiskFull : StopReason::WriteFailed);
             return;
         }
     }
@@ -1168,6 +1210,40 @@ void AudioEngine::timerCallback()
                 stopRecordingAsync(StopReason::DiskFull);
         });
     }
+}
+
+void AudioEngine::updateInputHealth()
+{
+    InputHealth now = InputHealth::ok;
+
+    if (deviceManager.getCurrentAudioDevice() != nullptr)
+    {
+        const auto delivered = callbackSamples.load();
+        stalledSeconds = (delivered == lastSeenCallbackSamples) ? stalledSeconds + 1 : 0;
+        lastSeenCallbackSamples = delivered;
+
+        const double rate = juce::jmax(1.0, nativeSampleRate.load());
+        if (stalledSeconds >= 3)
+            now = InputHealth::noCallbacks;
+        else if ((double) silentRun.load() >= 3.0 * rate)
+            now = InputHealth::silent;
+    }
+    else
+    {
+        stalledSeconds = 0;   // no device: the device selector says so already
+    }
+
+    if (now != inputHealth)
+    {
+        inputHealth = now;
+        listeners.call(&Listener::inputHealthChanged, now);
+    }
+}
+
+bool AudioEngine::freeSpaceIsLow() const
+{
+    const double bytesPerMin = juce::jmax(1.0, nativeSampleRate.load()) * 3.0 * 60.0;
+    return (double) chunkFolder.getBytesFreeOnVolume() < 2.0 * bytesPerMin * 2.0;
 }
 
 //==============================================================================
@@ -1219,8 +1295,12 @@ juce::Array<juce::File> AudioEngine::findOrphanedRecordings(const juce::File& de
     return orphans;
 }
 
-juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
+juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder,
+                                         int* unreadableOut)
 {
+    if (unreadableOut != nullptr)
+        *unreadableOut = 0;
+
     // Detect sample rate from first valid chunk
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
@@ -1362,6 +1442,9 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
         return {};
     }
 
+    if (unreadableOut != nullptr)
+        *unreadableOut = unreadableChunks;
+
     if (unreadableChunks > 0)
     {
         // Keep the chunks, but stop offering this folder at every launch.
@@ -1387,12 +1470,12 @@ juce::String AudioEngine::lockNameFor(const juce::File& folder)
 }
 
 void AudioEngine::recoverRecordingAsync(const juce::File& orphanedChunkFolder,
-                                        std::function<void(const juce::File&)> onDone)
+                                        std::function<void(const juce::File&, int)> onDone)
 {
     class RecoveryThread : public juce::Thread
     {
     public:
-        RecoveryThread(AudioEngine& e, juce::File f, std::function<void(const juce::File&)> cb)
+        RecoveryThread(AudioEngine& e, juce::File f, std::function<void(const juce::File&, int)> cb)
             : juce::Thread("BDG Recovery"), engine(e), folder(std::move(f)), done(std::move(cb)) {}
 
         void run() override
@@ -1402,20 +1485,21 @@ void AudioEngine::recoverRecordingAsync(const juce::File& orphanedChunkFolder,
             juce::InterProcessLock lock(AudioEngine::lockNameFor(folder));
             lock.enter(0);
 
-            const auto result = engine.recoverRecording(folder);
+            int unreadable = 0;
+            const auto result = engine.recoverRecording(folder, &unreadable);
             auto aliveFlag = engine.alive;
             auto cb = done;
-            juce::MessageManager::callAsync([aliveFlag, cb, result]()
+            juce::MessageManager::callAsync([aliveFlag, cb, result, unreadable]()
             {
                 if (aliveFlag->load() && cb)
-                    cb(result);
+                    cb(result, unreadable);
             });
         }
 
     private:
         AudioEngine& engine;
         juce::File folder;
-        std::function<void(const juce::File&)> done;
+        std::function<void(const juce::File&, int)> done;
     };
 
     if (recoveryThread != nullptr)
@@ -1478,6 +1562,10 @@ void AudioEngine::processRecording(const juce::File& file,
                 });
             };
 
+            // Errors travel as fixed codes ("read_failed", "write_failed",
+            // "too_large", "no_memory", "cancelled", "unknown"): the UI turns
+            // them into text in the current language, and analytics gets the
+            // code itself, never free text that could carry a path.
             auto emitError = [this](const juce::String& msg)
             {
                 auto* eng = engine;
@@ -1518,16 +1606,16 @@ void AudioEngine::processRecording(const juce::File& file,
             }
             catch (const std::bad_alloc&)
             {
-                emitError("Sem memoria suficiente para processar este arquivo. "
-                          "Tente desativar alguns tratamentos.");
+                emitError("no_memory");
             }
             catch (const std::exception& e)
             {
-                emitError(juce::String(e.what()));
+                DBG("DSP exception: " + juce::String(e.what()));
+                emitError("unknown");
             }
             catch (...)
             {
-                emitError("Erro desconhecido no processamento.");
+                emitError("unknown");
             }
         }
 
@@ -1549,7 +1637,7 @@ void AudioEngine::processRecording(const juce::File& file,
             {
                 // No path here: this string ends up in the error telemetry,
                 // and a path carries the user's account name.
-                emitError("Failed to read file");
+                emitError("read_failed");
                 return;
             }
 
@@ -1561,7 +1649,7 @@ void AudioEngine::processRecording(const juce::File& file,
             constexpr juce::int64 maxSamples = 1'036'800'000LL;
             if (totalSamples > maxSamples)
             {
-                emitError("File too large for DSP processing (>" + juce::String(maxSamples / (juce::int64)sampleRate / 3600) + "h)");
+                emitError("too_large");
                 return;
             }
 
@@ -1581,7 +1669,7 @@ void AudioEngine::processRecording(const juce::File& file,
                 });
             }
 
-            if (threadShouldExit()) { emitError("Cancelado"); return; }
+            if (threadShouldExit()) { emitError("cancelled"); return; }
 
             // 3) Normalize
             if (doNormalize)
@@ -1592,7 +1680,7 @@ void AudioEngine::processRecording(const juce::File& file,
                 DBG("DSP: normalize done");
             }
 
-            if (threadShouldExit()) { emitError("Cancelado"); return; }
+            if (threadShouldExit()) { emitError("cancelled"); return; }
 
             // 4) Noise reduction
             if (doNoiseReduction)
@@ -1604,7 +1692,7 @@ void AudioEngine::processRecording(const juce::File& file,
                 DBG("DSP: noiseReduce done");
             }
 
-            if (threadShouldExit()) { emitError("Cancelado"); return; }
+            if (threadShouldExit()) { emitError("cancelled"); return; }
 
             // 5) Compressor
             if (doCompressor)
@@ -1613,7 +1701,7 @@ void AudioEngine::processRecording(const juce::File& file,
                 Dsp::compress(buffer, sampleRate);
             }
 
-            if (threadShouldExit()) { emitError("Cancelado"); return; }
+            if (threadShouldExit()) { emitError("cancelled"); return; }
 
             // 6) De-Esser
             if (doDeEsser)
@@ -1622,7 +1710,7 @@ void AudioEngine::processRecording(const juce::File& file,
                 Dsp::deEss(buffer, sampleRate);
             }
 
-            if (threadShouldExit()) { emitError("Cancelado"); return; }
+            if (threadShouldExit()) { emitError("cancelled"); return; }
 
             // 6b) The compressor (no make-up gain) and the de-esser both pull
             // the level down after the first normalisation, so the file used
@@ -1635,7 +1723,7 @@ void AudioEngine::processRecording(const juce::File& file,
             if (doNormalize && (doCompressor || doDeEsser))
                 Dsp::normalize(buffer, sampleRate);
 
-            if (threadShouldExit()) { emitError("Cancelado"); return; }
+            if (threadShouldExit()) { emitError("cancelled"); return; }
 
             // 7) Save back to file
             DBG("DSP: saving to " + file.getFullPathName());
@@ -1655,7 +1743,7 @@ void AudioEngine::processRecording(const juce::File& file,
 
                 if (outStream == nullptr)
                 {
-                    emitError("Failed to create output file");
+                    emitError("write_failed");
                     return;
                 }
 
@@ -1665,7 +1753,7 @@ void AudioEngine::processRecording(const juce::File& file,
                 if (writer == nullptr)
                 {
                     tempFile.deleteFile();
-                    emitError("Failed to create WAV writer");
+                    emitError("write_failed");
                     return;
                 }
 
@@ -1693,8 +1781,7 @@ void AudioEngine::processRecording(const juce::File& file,
             if (! good)
             {
                 tempFile.deleteFile();
-                emitError("Could not write the processed file (disk full?). "
-                          "The original recording was kept unchanged.");
+                emitError("write_failed");
                 return;
             }
 
@@ -1703,8 +1790,7 @@ void AudioEngine::processRecording(const juce::File& file,
             if (! tempFile.replaceFileIn(file))
             {
                 tempFile.deleteFile();
-                emitError("Could not replace the original recording. "
-                          "It was kept unchanged.");
+                emitError("write_failed");
                 return;
             }
 

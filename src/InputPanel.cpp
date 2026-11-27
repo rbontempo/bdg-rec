@@ -16,7 +16,18 @@ InputPanel::InputPanel(AudioEngine& engine)
         const juce::String name = deviceCombo.getText();
         if (name.isNotEmpty())
         {
-            audioEngine.setInputDevice(name);
+            const auto error = audioEngine.setInputDevice(name);
+            if (error.isNotEmpty() || audioEngine.getCurrentInputDeviceName() != name)
+            {
+                // Show what is really open (possibly nothing) and say why.
+                // An empty box also lets the user pick the same item again:
+                // re-selecting the shown item does not fire onChange.
+                refreshDeviceList();
+                if (onDeviceError) onDeviceError(error);
+                return;
+            }
+
+            if (onDeviceChosen) onDeviceChosen(name);
             if (onSettingsChanged) onSettingsChanged();
         }
     };
@@ -93,7 +104,8 @@ void InputPanel::setDevice(const juce::String& deviceName)
     if (audioEngine.getCurrentInputDeviceName() != deviceName)
         audioEngine.setInputDevice(deviceName);
 
-    deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);
+    // Show what actually opened, which may not be the saved device.
+    refreshDeviceList();
 }
 
 void InputPanel::setVolume(int value)
@@ -149,8 +161,11 @@ void InputPanel::refreshDeviceList()
     // it stayed blank on every launch after. Likewise, when a chosen device
     // fails to open and the system falls back to another, the box must not
     // keep claiming the one that failed. The old text is only a fallback.
-    int idx = devices.indexOf(audioEngine.getCurrentInputDeviceName());
-    if (idx < 0)
+    // No device open at all (a failed open leaves none): show none, rather
+    // than the name of the device that just failed.
+    const auto open = audioEngine.getCurrentInputDeviceName();
+    int idx = open.isEmpty() ? -1 : devices.indexOf(open);
+    if (idx < 0 && open.isNotEmpty())
         idx = devices.indexOf(currentName);
 
     deviceCombo.setSelectedItemIndex(idx, juce::dontSendNotification);

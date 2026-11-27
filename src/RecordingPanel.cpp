@@ -44,6 +44,7 @@ void RecordingPanel::startRecording(const juce::File& destFolder)
     elapsedSecs = 0;
     startMs = juce::Time::getMillisecondCounterHiRes();
     diskUpdateTick = 0;
+    diskWarningLevel = 0;
     currentDestFolder = destFolder;
     waveformDisplay.setRecording(true);
     recordButton.setRecordingState(true);
@@ -55,6 +56,7 @@ void RecordingPanel::startRecording(const juce::File& destFolder)
 void RecordingPanel::setDestFolder(const juce::File& folder)
 {
     currentDestFolder = folder;
+    diskWarningLevel = 0;   // the colour belonged to the previous volume
     updateDiskSpace();
     repaint();
 }
@@ -71,6 +73,21 @@ void RecordingPanel::stopRecording()
     recordButton.setRecordingState(false);
     timerLabel.setVisible(true);
     timerLabel.setColour(juce::Label::textColourId, BdgColours::textPrimary);
+    repaint();
+}
+
+void RecordingPanel::setSaving(bool isSaving)
+{
+    if (isSaving)
+        stopRecording();   // freezes the clock at the real stop time
+    else
+    {
+        diskWarningLevel = 0;  // a take that ended in yellow/red no longer applies
+        updateDiskSpace();     // the merge and the DSP both changed free space
+    }
+
+    waveformDisplay.setSaving(isSaving);
+    recordButton.setEnabled(! isSaving);
     repaint();
 }
 
@@ -118,6 +135,16 @@ void RecordingPanel::timerCallback()
         timerLabel.setVisible(true);
         timerLabel.setColour(juce::Label::textColourId,
             (timerTick % 2 == 0) ? BdgColours::primary : BdgColours::primary.withAlpha(0.3f));
+        repaint();
+    }
+    else if (currentDestFolder != juce::File() && ++idleDiskTick >= 20)
+    {
+        // At rest the label used to keep whatever it read last, while the bar
+        // next to it is read live — the two disagreed. Every 10 s is plenty.
+        // Only once a folder is known: probing an unconfigured default
+        // (~/Downloads) is what raises the macOS folder prompt.
+        idleDiskTick = 0;
+        updateDiskSpace();
         repaint();
     }
 }
