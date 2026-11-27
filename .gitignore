@@ -6,3 +6,4 @@ build-*/
 dist/
 compile_commands.json
 *.dmg
+.cache/

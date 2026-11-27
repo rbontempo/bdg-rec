@@ -8,6 +8,279 @@
  #define BDG_CHUNK_SECONDS (5.0 * 60.0)
 #endif
 
+namespace
+{
+    struct RawWavInfo
+    {
+        juce::int64 dataOffset = 0;
+        double      sampleRate = 0.0;
+        bool        ok = false;
+    };
+
+    // Walks the RIFF chunks by hand. Needed because a chunk left behind by a
+    // crash has a header the normal reader will not touch, yet the `fmt ` and
+    // `data` chunks themselves are perfectly intact.
+    RawWavInfo readWavLayout(juce::InputStream& stream, juce::int64 fileSize)
+    {
+        RawWavInfo info;
+
+        // RF64 is what JUCE switches to past 4 GB (around 8 h at 48 kHz); its
+        // chunk layout up to `data` is the same as RIFF's.
+        const int magic = stream.readInt();
+        if (magic != (int) juce::ByteOrder::littleEndianInt("RIFF")
+            && magic != (int) juce::ByteOrder::littleEndianInt("RF64"))
+            return info;
+        stream.readInt(); // riff size (unreliable on a truncated file)
+        if (stream.readInt() != (int) juce::ByteOrder::littleEndianInt("WAVE"))
+            return info;
+
+        while (! stream.isExhausted() && stream.getPosition() + 8 <= fileSize)
+        {
+            const int id   = stream.readInt();
+            const int size = stream.readInt();
+            const juce::int64 payload = stream.getPosition();
+
+            if (id == (int) juce::ByteOrder::littleEndianInt("fmt ") && size >= 16)
+            {
+                // audioFormat(2) numChannels(2) sampleRate(4) ...
+                // The size check matters: on a malformed file those bytes
+                // would be the next chunk's header read as a sample rate.
+                stream.setPosition(payload + 4);
+                info.sampleRate = (double) (juce::uint32) stream.readInt();
+            }
+            else if (id == (int) juce::ByteOrder::littleEndianInt("data"))
+            {
+                info.dataOffset = payload;
+                info.ok = info.sampleRate > 0.0;
+                return info;
+            }
+
+            if (size < 0)
+                return info;
+
+            stream.setPosition(payload + size + (size & 1)); // chunks are word-aligned
+        }
+
+        return info;
+    }
+
+    // How many 24-bit mono samples the file really holds, from its size on
+    // disk rather than from the length its header claims. -1 if the layout
+    // cannot be read. The two disagree exactly in the cases that matter: a
+    // chunk that was open when the app died (header says 0, or the length at
+    // the last flush) and a file whose final bytes never reached the disk
+    // (header says complete, the data is short).
+    juce::int64 samplesOnDisk(const juce::File& file)
+    {
+        auto stream = std::unique_ptr<juce::FileInputStream>(file.createInputStream());
+        if (stream == nullptr || ! stream->openedOk())
+            return -1;
+
+        const juce::int64 fileSize = stream->getTotalLength();
+        const auto info = readWavLayout(*stream, fileSize);
+        if (! info.ok || info.dataOffset <= 0 || info.dataOffset > fileSize)
+            return -1;
+
+        return (fileSize - info.dataOffset) / 3;
+    }
+
+    // The finished file reads back at the expected length AND that many
+    // samples are physically on disk. Checking the header alone was not
+    // enough: JUCE rewrites it with the full length even when the last
+    // buffered bytes failed to reach a full disk.
+    bool verifyWavOnDisk(juce::AudioFormatManager& formats,
+                         const juce::File& file, juce::int64 expectedSamples)
+    {
+        std::unique_ptr<juce::AudioFormatReader> check(formats.createReaderFor(file));
+        if (check == nullptr || check->lengthInSamples != expectedSamples)
+            return false;
+
+        return samplesOnDisk(file) >= expectedSamples;
+    }
+
+    // Reads the sample rate of a chunk whose header the WAV reader rejects.
+    double readRawSampleRate(const juce::File& chunkFile)
+    {
+        auto stream = std::unique_ptr<juce::FileInputStream>(chunkFile.createInputStream());
+        if (stream == nullptr || ! stream->openedOk())
+            return 0.0;
+
+        return readWavLayout(*stream, stream->getTotalLength()).sampleRate;
+    }
+
+    // A WAV writer only backfills the real length into the header when it is
+    // closed. After a crash the chunk that was being recorded still holds all
+    // its PCM, but the header claims zero samples, so the normal copy path
+    // silently drops it. This derives the sample count from the bytes that are
+    // actually on disk.
+    //
+    // `failed` is set when the copy stopped short — a read error, or a write
+    // the output refused (full disk). The caller must not treat the result as
+    // complete then: it used to, and deleted the chunks.
+    juce::int64 salvageTruncatedChunk(const juce::File& chunkFile,
+                                      juce::AudioFormatWriter* writer,
+                                      bool& failed)
+    {
+        failed = false;
+        auto stream = std::unique_ptr<juce::FileInputStream>(chunkFile.createInputStream());
+        if (stream == nullptr || ! stream->openedOk())
+        {
+            failed = true;
+            return 0;
+        }
+
+        const juce::int64 fileSize = stream->getTotalLength();
+        if (fileSize <= 44)
+            return 0;
+
+        const auto info = readWavLayout(*stream, fileSize);
+        const juce::int64 dataOffset = info.dataOffset;
+
+        if (dataOffset <= 0 || dataOffset >= fileSize)
+        {
+            failed = true;   // real bytes, but no readable layout
+            return 0;
+        }
+
+        // 24-bit mono: 3 bytes per sample.
+        const juce::int64 numSamples = (fileSize - dataOffset) / 3;
+        if (numSamples <= 0)
+            return 0;
+
+        stream->setPosition(dataOffset);
+
+        const int blockSize = 65536;
+        juce::AudioBuffer<float> buffer(1, blockSize);
+        std::vector<juce::uint8> raw((size_t) blockSize * 3);
+        juce::int64 written = 0;
+
+        while (written < numSamples)
+        {
+            const int thisBlock = (int) juce::jmin((juce::int64) blockSize, numSamples - written);
+            const int wanted = thisBlock * 3;
+
+            if (stream->read(raw.data(), wanted) != wanted)
+            {
+                failed = true;
+                break;
+            }
+
+            float* dest = buffer.getWritePointer(0);
+            for (int i = 0; i < thisBlock; ++i)
+            {
+                const juce::uint8* p = raw.data() + (size_t) i * 3;
+                juce::int32 v = (juce::int32) (p[0] | (p[1] << 8) | (p[2] << 16));
+                if (v & 0x800000) v |= ~0xffffff; // sign-extend 24 -> 32 bits
+                dest[i] = (float) v / 8388608.0f;
+            }
+
+            if (! writer->writeFromAudioSampleBuffer(buffer, 0, thisBlock))
+            {
+                failed = true;
+                break;
+            }
+
+            written += thisBlock;
+        }
+
+        return written;
+    }
+
+    // WavAudioFormatWriter::flush() only rewrites the header and hands the
+    // buffered bytes to the OS; it never calls the stream's flush(), which is
+    // where FileOutputStream does its fsync. So the data could still be in
+    // the page cache when the chunks were deleted, and a power cut right
+    // after "saved" lost the take. This pairs the two.
+    bool flushToDisk(juce::AudioFormatWriter* writer, juce::FileOutputStream* stream)
+    {
+        const bool headerOk = writer->flush();
+        stream->flush();
+        return headerOk && stream->getStatus().wasOk();
+    }
+
+    // Wraps the live chunk's WAV writer so the ThreadedWriter's periodic
+    // flush() also syncs the file, on the writer thread where it runs.
+    class SyncingWriter : public juce::AudioFormatWriter
+    {
+    public:
+        SyncingWriter(juce::AudioFormatWriter* inner, juce::FileOutputStream* s)
+            : juce::AudioFormatWriter(nullptr, inner->getFormatName(), inner->getSampleRate(),
+                                      (unsigned int) inner->getNumChannels(),
+                                      (unsigned int) inner->getBitsPerSample()),
+              wav(inner), stream(s)
+        {
+            usesFloatingPointData = inner->isFloatingPoint();
+        }
+
+        bool write(const int** samples, int numSamples) override
+        {
+            return wav->write(samples, numSamples);
+        }
+
+        bool flush() override { return flushToDisk(wav.get(), stream); }
+
+    private:
+        std::unique_ptr<juce::AudioFormatWriter> wav; // owns the stream
+        juce::FileOutputStream* stream;
+    };
+
+    // Copies one chunk into `writer`. Takes the normal reader path when the
+    // header and the bytes on disk agree, and reads the raw PCM otherwise.
+    // Anything but `ok` means the chunk was not copied in full: `unreadable`
+    // when its bytes cannot be made sense of, `writeFailed` when the output
+    // refused data (full disk) or a read stopped mid-way. `samples` gets what
+    // was written either way.
+    enum class ChunkCopy { ok, unreadable, writeFailed };
+
+    ChunkCopy copyChunk(juce::AudioFormatManager& formats, const juce::File& chunkFile,
+                        juce::AudioFormatWriter* writer, juce::int64& samples)
+    {
+        samples = 0;
+
+        // A header-only file is an empty chunk, not a damaged one.
+        if (chunkFile.getSize() <= 44)
+            return ChunkCopy::ok;
+
+        const juce::int64 onDisk = samplesOnDisk(chunkFile);
+
+        std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(chunkFile));
+        const juce::int64 inHeader = (reader != nullptr) ? reader->lengthInSamples : -1;
+
+        if (reader == nullptr || inHeader != onDisk)
+        {
+            reader.reset(); // release the handle before re-reading the file
+            bool failed = false;
+            samples = salvageTruncatedChunk(chunkFile, writer, failed);
+            DBG("  copyChunk: salvaged " + juce::String(samples) + " samples from "
+                + chunkFile.getFileName() + " (header " + juce::String(inHeader)
+                + ", on disk " + juce::String(onDisk) + ")");
+            if (! failed)
+                return ChunkCopy::ok;
+            return (onDisk < 0 && samples == 0) ? ChunkCopy::unreadable : ChunkCopy::writeFailed;
+        }
+
+        const int blockSize = 65536;
+        juce::AudioBuffer<float> buffer(1, blockSize);
+
+        for (juce::int64 pos = 0; pos < inHeader; pos += blockSize)
+        {
+            const int n = (int) juce::jmin((juce::int64) blockSize, inHeader - pos);
+            if (! reader->read(&buffer, 0, n, pos, true, false))
+                return ChunkCopy::unreadable;
+
+            // A full disk makes this fail silently — the stream just stops
+            // accepting bytes. Ignoring the result is how a truncated file
+            // used to pass for a finished recording.
+            if (! writer->writeFromAudioSampleBuffer(buffer, 0, n))
+                return ChunkCopy::writeFailed;
+
+            samples += n;
+        }
+
+        return ChunkCopy::ok;
+    }
+}
+
 //==============================================================================
 AudioEngine::AudioEngine() = default;
 
@@ -31,6 +304,13 @@ AudioEngine::~AudioEngine()
     // so the merge has to finish here rather than on a background thread.
     if (recording.load())
         stopRecording();
+
+    if (recoveryThread != nullptr)
+    {
+        // Same reasoning as the save thread: never kill a copy half-way.
+        recoveryThread->stopThread(-1);
+        recoveryThread.reset();
+    }
 
     if (saveThread != nullptr)
     {
@@ -388,7 +668,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         if (lock.isLocked() && threadedWriter != nullptr)
         {
             // write() returns false when its FIFO is full, which happens when
-            // the disk stalls long enough to back up ~1.4 s of audio. Those
+            // the disk stalls long enough to back up ~5 s of audio. Those
             // samples are gone; at least make the loss countable.
             if (! threadedWriter->write(monoBuffer.getArrayOfReadPointers(), n))
                 droppedSamples.fetch_add(n);
@@ -424,6 +704,20 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* /*source*/)
     // than stacking a second dialog on top.
     if (recording.load() && deviceManager.getCurrentAudioDevice() == nullptr)
         stopRecordingAsync(StopReason::DeviceLost);
+
+    // The input the take started on is gone and JUCE fell back to another
+    // one (typically the built-in microphone). The rate often matches, so the
+    // rate guard does not fire, and the take used to carry on from the wrong
+    // microphone with the old name still on screen. Compare the configured
+    // input, not the device name: toggling monitoring can reopen the same
+    // input under a combined input+output name.
+    else if (recording.load() && recordingDeviceName.isNotEmpty()
+             && deviceManager.getAudioDeviceSetup().inputDeviceName != recordingDeviceName)
+    {
+        DBG("  input changed from " + recordingDeviceName + " to "
+            + deviceManager.getAudioDeviceSetup().inputDeviceName + " — stopping");
+        stopRecordingAsync(StopReason::DeviceLost);
+    }
 
     // The device set really did change, so this is the one moment a rescan
     // is warranted.
@@ -465,6 +759,7 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     // Retrieve current device parameters
     if (auto* device = deviceManager.getCurrentAudioDevice())
     {
+        recordingDeviceName = deviceManager.getAudioDeviceSetup().inputDeviceName;
         nativeSampleRate.store(device->getCurrentSampleRate());
         int ch = device->getActiveInputChannels().countNumberOfSetBits();
         if (ch == 0) ch = 1;
@@ -486,6 +781,10 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     chunkFolder = destFolder.getChildFile("BDG_rec_" + timestamp);
     chunkFolder.createDirectory();
 
+    takeLock = std::make_unique<juce::InterProcessLock>(lockNameFor(chunkFolder));
+    if (! takeLock->enter(0))
+        DBG("  could not lock " + chunkFolder.getFullPathName() + " — continuing unlocked");
+
     samplesPerChunk = (juce::int64)(BDG_CHUNK_SECONDS * nativeSampleRate.load());
     chunkIndex = 0;
     deviceMismatch.store(false);
@@ -493,6 +792,7 @@ bool AudioEngine::startRecording(const juce::File& destFolder)
     if (!openNextChunk())
     {
         chunkFolder.deleteRecursively();
+        takeLock.reset();
         return false;
     }
 
@@ -543,7 +843,7 @@ bool AudioEngine::openNextChunk()
     }
 
     // Transfer ownership of the stream to the writer
-    fileStream.release();
+    auto* rawChunkStream = fileStream.release();
 
     // One writer thread serves every chunk for the whole session — tearing it
     // down and restarting it per rotation was pure added latency in the gap.
@@ -553,8 +853,17 @@ bool AudioEngine::openNextChunk()
         writerThread->startThread();
     }
 
+    // FIFO of ~5 s at 48 kHz: the periodic flush below does an fsync, and on a
+    // slow USB disk that can stall the writer thread for longer than the old
+    // 65536-sample (1.4 s) buffer could absorb.
     auto newWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(
-        writer, *writerThread, 65536);
+        new SyncingWriter(writer, rawChunkStream), *writerThread, 262144);
+
+    // Rewrite the header and fsync every ~2 s. Without it the chunk being
+    // recorded had a zero-length header and unsynced data until it closed:
+    // after a crash it needed raw salvage, and after a power cut up to five
+    // minutes could simply be missing from disk.
+    newWriter->setFlushInterval((int) juce::jmax(1.0, nativeSampleRate.load() * 2.0));
 
     // Everything above happened while the old writer was still accepting
     // samples. The swap itself is a couple of pointer moves — the audio
@@ -617,13 +926,12 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks(const SaveJob& job)
         return result;
     }
 
-    outStream.release(); // writer owns the stream
+    auto* rawOut = outStream.release(); // writer owns the stream
 
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
 
-    juce::int64 samplesExpected = 0;
-    juce::int64 samplesWritten  = 0;
+    juce::int64 samplesWritten = 0;
     bool allWritesSucceeded = true;
     int  chunksSkipped = 0;
 
@@ -632,82 +940,65 @@ AudioEngine::ConcatResult AudioEngine::concatenateChunks(const SaveJob& job)
         juce::File chunkFile = job.chunkFolder.getChildFile(
             juce::String::formatted("chunk_%03d.wav", i));
 
-        std::unique_ptr<juce::AudioFormatReader> reader(
-            formatManager.createReaderFor(chunkFile));
+        juce::int64 copied = 0;
+        const auto outcome = copyChunk(formatManager, chunkFile, finalWriter, copied);
+        samplesWritten += copied;
 
-        if (reader == nullptr)
+        if (outcome == ChunkCopy::unreadable)
         {
-            // Salvage policy: an unreadable chunk costs us that chunk, not the
-            // whole take. Failing here would delete a final file that still
-            // holds every other chunk. Only a failed *write* (a full disk) is
-            // fatal, because then the output itself is untrustworthy.
-            DBG("  concatenateChunks: skipping corrupted chunk " + juce::String(i));
+            // An unreadable chunk used to be skipped, the take reported as
+            // saved and the folder deleted — the only copy of those five
+            // minutes went with it. Often the cause is transient (antivirus
+            // or a sync client holding the file), so fail the merge and keep
+            // the chunks: the recovery flow retries on the next launch.
+            DBG("  concatenateChunks: chunk " + juce::String(i) + " is unreadable");
             ++chunksSkipped;
-            continue;
-        }
-
-        const juce::int64 totalSamples = reader->lengthInSamples;
-        samplesExpected += totalSamples;
-
-        const int blockSize = 65536;
-        juce::AudioBuffer<float> buffer(1, blockSize);
-
-        for (juce::int64 pos = 0; pos < totalSamples; pos += blockSize)
-        {
-            int samplesToRead = (int)juce::jmin((juce::int64)blockSize, totalSamples - pos);
-            reader->read(&buffer, 0, samplesToRead, pos, true, false);
-
-            // A full disk makes this fail silently — the stream just stops
-            // accepting bytes. Ignoring the result is how a truncated file
-            // used to pass for a finished recording.
-            if (! finalWriter->writeFromAudioSampleBuffer(buffer, 0, samplesToRead))
-            {
-                DBG("  concatenateChunks: write FAILED at chunk " + juce::String(i));
-                allWritesSucceeded = false;
-                break;
-            }
-
-            samplesWritten += samplesToRead;
-        }
-
-        if (! allWritesSucceeded)
             break;
+        }
+
+        if (outcome == ChunkCopy::writeFailed)
+        {
+            DBG("  concatenateChunks: write FAILED at chunk " + juce::String(i));
+            allWritesSucceeded = false;
+            break;
+        }
+    }
+
+    // Push the data to disk (header + fsync) before anything is verified and
+    // the chunks are deleted. The writer's destructor below only rewrites the
+    // header; it does not sync.
+    if (allWritesSucceeded && chunksSkipped == 0 && ! flushToDisk(finalWriter, rawOut))
+    {
+        DBG("  concatenateChunks: final sync FAILED");
+        allWritesSucceeded = false;
     }
 
     // Destroying the writer flushes any buffered data and rewrites the WAV
     // header with the real length — must happen before we verify the file.
     delete finalWriter;
 
-    // Final proof: read the finished file back and check it actually holds
-    // every sample we set out to write. Cheap, and it catches truncation the
-    // write path missed. A take with no samples at all (started and stopped
-    // inside one buffer, or no microphone permission) is an honest empty
-    // result, not a save failure — reporting "disk full" for it would be a lie.
+    // Final proof: read the finished file back and check it holds every
+    // sample we wrote — by header AND by the bytes actually on disk. A take
+    // with no samples at all (started and stopped inside one buffer, or no
+    // microphone permission) is an honest empty result, not a save failure —
+    // reporting "disk full" for it would be a lie.
     bool verified = false;
-    if (allWritesSucceeded && samplesWritten == samplesExpected)
+    if (allWritesSucceeded && chunksSkipped == 0)
     {
         if (samplesWritten == 0)
-        {
             verified = true;
-        }
+        else if (verifyWavOnDisk(formatManager, finalFile, samplesWritten))
+            verified = true;
         else
-        {
-            std::unique_ptr<juce::AudioFormatReader> check(
-                formatManager.createReaderFor(finalFile));
-
-            if (check != nullptr && check->lengthInSamples == samplesExpected)
-                verified = true;
-            else
-                DBG("  concatenateChunks: verification FAILED on final file");
-        }
+            DBG("  concatenateChunks: verification FAILED on final file");
     }
 
     result.ok = verified;
 
     DBG("  concatenateChunks: final file = " + finalFile.getFullPathName()
         + " ok=" + juce::String(verified ? "yes" : "no")
-        + " samples=" + juce::String(samplesWritten) + "/" + juce::String(samplesExpected)
-        + " skippedChunks=" + juce::String(chunksSkipped));
+        + " samples=" + juce::String(samplesWritten)
+        + " unreadableChunks=" + juce::String(chunksSkipped));
 
     return result;
 }
@@ -753,6 +1044,13 @@ juce::File AudioEngine::finaliseSave()
 {
     const SaveJob job = pendingSave;
     auto result = concatenateChunks(job);
+
+    // From here on the folder is either gone or a genuine orphan for the
+    // recovery flow, so nobody needs to be kept away from it any more.
+    // startRecording() refuses to run while this thread is alive, so the
+    // member is not touched concurrently.
+    struct ReleaseLock { std::unique_ptr<juce::InterProcessLock>& l; ~ReleaseLock() { l.reset(); } };
+    const ReleaseLock release { takeLock };
 
     if (result.ok)
     {
@@ -835,9 +1133,18 @@ void AudioEngine::timerCallback()
 
     timerTicks = 0;
 
-    auto freeBytes = chunkFolder.getBytesFreeOnVolume();
-    int bytesPerSec = (int)(nativeSampleRate.load() * 3.0); // 24-bit mono = 3 bytes/sample
-    int remainingSec = (bytesPerSec > 0) ? (int)(freeBytes / bytesPerSec) : 9999;
+    // Stopping is not free: the merge writes a second, complete copy of the
+    // take before the chunks are deleted. Stopping with "2 minutes left" used
+    // to leave room for 2 minutes of audio and no room at all for the merge,
+    // so the auto-stop could never actually save. Reserve the take's size,
+    // and count every further second twice (chunk now, merged copy later).
+    const juce::int64 freeBytes = chunkFolder.getBytesFreeOnVolume();
+    const double bytesPerSec = nativeSampleRate.load() * 3.0; // 24-bit mono
+    const juce::int64 takeSamples = (juce::int64) juce::jmax(0, chunkIndex - 1) * samplesPerChunk
+                                    + samplesInChunk.load();
+    const juce::int64 mergeReserve = takeSamples * 3 + 16 * 1024 * 1024; // + 16 MB margin
+    const juce::int64 usable = juce::jmax((juce::int64) 0, freeBytes - mergeReserve);
+    int remainingSec = (bytesPerSec > 0.0) ? (int) ((double) usable / (2.0 * bytesPerSec)) : 9999;
     int remainingMin = remainingSec / 60;
 
     listeners.call(&Listener::diskSpaceWarning, remainingMin);
@@ -874,134 +1181,36 @@ juce::Array<juce::File> AudioEngine::findOrphanedRecordings(const juce::File& de
             continue;
 
         // Check for at least one chunk file (chunk_001.wav is always the first)
-        if (dir.getChildFile("chunk_001.wav").existsAsFile())
-            orphans.add(dir);
+        if (! dir.getChildFile("chunk_001.wav").existsAsFile())
+            continue;
+
+        // Already recovered as far as it goes; kept only for safety.
+        if (dir.getChildFile(kRecoveredMarker).exists())
+            continue;
+
+        // This process's own take (recording or still merging). The lock
+        // below cannot tell: it is per process, so we would get it back.
+        if (takeLock != nullptr && dir == chunkFolder)
+            continue;
+
+        // Another copy of the app is still writing or merging this take.
+        // Treating it as an orphan let "Discard" delete a live recording.
+        // Caution: on POSIX this is an fcntl lock, owned per PROCESS, and
+        // exit() below releases it for the whole process. Safe because this
+        // only runs at launch, before any recovery thread holds a lock; do
+        // not call it while recoverRecordingAsync is running.
+        juce::InterProcessLock probe(lockNameFor(dir));
+        if (! probe.enter(0))
+        {
+            DBG("findOrphanedRecordings: " + dir.getFileName() + " is in use, skipping");
+            continue;
+        }
+        probe.exit();
+
+        orphans.add(dir);
     }
 
     return orphans;
-}
-
-namespace
-{
-    struct RawWavInfo
-    {
-        juce::int64 dataOffset = 0;
-        double      sampleRate = 0.0;
-        bool        ok = false;
-    };
-
-    // Walks the RIFF chunks by hand. Needed because a chunk left behind by a
-    // crash has a header the normal reader will not touch, yet the `fmt ` and
-    // `data` chunks themselves are perfectly intact.
-    RawWavInfo readWavLayout(juce::InputStream& stream, juce::int64 fileSize)
-    {
-        RawWavInfo info;
-
-        if (stream.readInt() != (int) juce::ByteOrder::littleEndianInt("RIFF"))
-            return info;
-        stream.readInt(); // riff size (unreliable on a truncated file)
-        if (stream.readInt() != (int) juce::ByteOrder::littleEndianInt("WAVE"))
-            return info;
-
-        while (! stream.isExhausted() && stream.getPosition() + 8 <= fileSize)
-        {
-            const int id   = stream.readInt();
-            const int size = stream.readInt();
-            const juce::int64 payload = stream.getPosition();
-
-            if (id == (int) juce::ByteOrder::littleEndianInt("fmt ") && size >= 16)
-            {
-                // audioFormat(2) numChannels(2) sampleRate(4) ...
-                // The size check matters: on a malformed file those bytes
-                // would be the next chunk's header read as a sample rate.
-                stream.setPosition(payload + 4);
-                info.sampleRate = (double) (juce::uint32) stream.readInt();
-            }
-            else if (id == (int) juce::ByteOrder::littleEndianInt("data"))
-            {
-                info.dataOffset = payload;
-                info.ok = info.sampleRate > 0.0;
-                return info;
-            }
-
-            if (size < 0)
-                return info;
-
-            stream.setPosition(payload + size + (size & 1)); // chunks are word-aligned
-        }
-
-        return info;
-    }
-
-    // Reads the sample rate of a chunk whose header the WAV reader rejects.
-    double readRawSampleRate(const juce::File& chunkFile)
-    {
-        auto stream = std::unique_ptr<juce::FileInputStream>(chunkFile.createInputStream());
-        if (stream == nullptr || ! stream->openedOk())
-            return 0.0;
-
-        return readWavLayout(*stream, stream->getTotalLength()).sampleRate;
-    }
-
-    // A WAV writer only backfills the real length into the header when it is
-    // closed. After a crash the chunk that was being recorded still holds all
-    // its PCM, but the header claims zero samples, so the normal copy path
-    // silently drops it. This derives the sample count from the bytes that are
-    // actually on disk.
-    juce::int64 salvageTruncatedChunk(const juce::File& chunkFile,
-                                      juce::AudioFormatWriter* writer)
-    {
-        auto stream = std::unique_ptr<juce::FileInputStream>(chunkFile.createInputStream());
-        if (stream == nullptr || ! stream->openedOk())
-            return 0;
-
-        const juce::int64 fileSize = stream->getTotalLength();
-        if (fileSize <= 44)
-            return 0;
-
-        const auto info = readWavLayout(*stream, fileSize);
-        const juce::int64 dataOffset = info.dataOffset;
-
-        if (dataOffset <= 0 || dataOffset >= fileSize)
-            return 0;
-
-        // 24-bit mono: 3 bytes per sample.
-        const juce::int64 numSamples = (fileSize - dataOffset) / 3;
-        if (numSamples <= 0)
-            return 0;
-
-        stream->setPosition(dataOffset);
-
-        const int blockSize = 65536;
-        juce::AudioBuffer<float> buffer(1, blockSize);
-        std::vector<juce::uint8> raw((size_t) blockSize * 3);
-        juce::int64 written = 0;
-
-        while (written < numSamples)
-        {
-            const int thisBlock = (int) juce::jmin((juce::int64) blockSize, numSamples - written);
-            const int wanted = thisBlock * 3;
-
-            if (stream->read(raw.data(), wanted) != wanted)
-                break;
-
-            float* dest = buffer.getWritePointer(0);
-            for (int i = 0; i < thisBlock; ++i)
-            {
-                const juce::uint8* p = raw.data() + (size_t) i * 3;
-                juce::int32 v = (juce::int32) (p[0] | (p[1] << 8) | (p[2] << 16));
-                if (v & 0x800000) v |= ~0xffffff; // sign-extend 24 -> 32 bits
-                dest[i] = (float) v / 8388608.0f;
-            }
-
-            if (! writer->writeFromAudioSampleBuffer(buffer, 0, thisBlock))
-                break;
-
-            written += thisBlock;
-        }
-
-        return written;
-    }
 }
 
 juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
@@ -1086,63 +1295,43 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
         return {};
     }
 
-    outStream.release(); // writer owns the stream
+    auto* rawOut = outStream.release(); // writer owns the stream
 
     juce::int64 recoveredSamples = 0;
     bool writeFailed = false;
+    int  unreadableChunks = 0;
 
     for (int i = 1; i <= detectedChunkCount; ++i)
     {
         juce::File chunkFile = orphanedChunkFolder.getChildFile(
             juce::String::formatted("chunk_%03d.wav", i));
 
-        std::unique_ptr<juce::AudioFormatReader> reader(
-            formatManager.createReaderFor(chunkFile));
+        // copyChunk reads the raw PCM whenever the header disagrees with the
+        // bytes on disk — the signature of the chunk that was open when the
+        // app died, whose header says 0 (or the length at the last flush).
+        juce::int64 copied = 0;
+        const auto outcome = copyChunk(formatManager, chunkFile, finalWriter, copied);
+        recoveredSamples += copied;
 
-        const juce::int64 totalSamples = (reader != nullptr) ? reader->lengthInSamples : 0;
-
-        // No usable length but real bytes on disk is the signature of the
-        // chunk that was open when the app died — the case this whole function
-        // exists for. Depending on how much of the header survived, JUCE
-        // either reports 0/-1 or refuses to make a reader at all, so treat
-        // every one of those the same and read the PCM payload directly.
-        if (totalSamples <= 0 && chunkFile.getSize() > 44)
+        if (outcome == ChunkCopy::writeFailed)
         {
-            reader.reset(); // release the handle before re-reading the file
-            const juce::int64 salvaged = salvageTruncatedChunk(chunkFile, finalWriter);
-            DBG("recoverRecording: salvaged " + juce::String(salvaged)
-                + " samples from unfinalised chunk " + juce::String(i));
-            recoveredSamples += salvaged;
-            continue;
-        }
-
-        if (reader == nullptr)
-        {
-            DBG("recoverRecording: skipping corrupted chunk " + juce::String(i));
-            continue;
-        }
-
-        const int blockSize = 65536;
-        juce::AudioBuffer<float> buffer(1, blockSize);
-
-        for (juce::int64 pos = 0; pos < totalSamples; pos += blockSize)
-        {
-            int samplesToRead = (int)juce::jmin((juce::int64)blockSize, totalSamples - pos);
-            reader->read(&buffer, 0, samplesToRead, pos, true, false);
-
-            if (! finalWriter->writeFromAudioSampleBuffer(buffer, 0, samplesToRead))
-            {
-                DBG("recoverRecording: write FAILED on chunk " + juce::String(i));
-                writeFailed = true;
-                break;
-            }
-
-            recoveredSamples += samplesToRead;
-        }
-
-        if (writeFailed)
+            DBG("recoverRecording: write FAILED on chunk " + juce::String(i));
+            writeFailed = true;
             break;
+        }
+
+        if (outcome == ChunkCopy::unreadable)
+        {
+            // The user asked for whatever can be saved, so carry on — but the
+            // folder is kept below, because this chunk may still be readable
+            // by other means.
+            DBG("recoverRecording: chunk " + juce::String(i) + " is unreadable, skipping");
+            ++unreadableChunks;
+        }
     }
+
+    if (! writeFailed && recoveredSamples > 0 && ! flushToDisk(finalWriter, rawOut))
+        writeFailed = true;
 
     delete finalWriter;
 
@@ -1153,10 +1342,7 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
     bool verified = false;
     if (! writeFailed && recoveredSamples > 0)
     {
-        std::unique_ptr<juce::AudioFormatReader> check(
-            formatManager.createReaderFor(finalFile));
-
-        verified = (check != nullptr && check->lengthInSamples == recoveredSamples);
+        verified = verifyWavOnDisk(formatManager, finalFile, recoveredSamples);
 
         if (! verified)
             DBG("recoverRecording: verification FAILED on the recovered file");
@@ -1170,11 +1356,72 @@ juce::File AudioEngine::recoverRecording(const juce::File& orphanedChunkFolder)
         return {};
     }
 
-    orphanedChunkFolder.deleteRecursively();
+    if (unreadableChunks > 0)
+    {
+        // Keep the chunks, but stop offering this folder at every launch.
+        orphanedChunkFolder.getChildFile(kRecoveredMarker).create();
+        DBG("recoverRecording: " + juce::String(unreadableChunks)
+            + " chunk(s) unreadable — folder kept at " + orphanedChunkFolder.getFullPathName());
+    }
+    else
+    {
+        orphanedChunkFolder.deleteRecursively();
+    }
 
     DBG("recoverRecording: recovered " + juce::String(recoveredSamples)
         + " samples to " + finalFile.getFullPathName());
     return finalFile;
+}
+
+juce::String AudioEngine::lockNameFor(const juce::File& folder)
+{
+    // InterProcessLock names become file names / mutex names: keep them short
+    // and free of path separators.
+    return "BDGrec_take_" + juce::String::toHexString(folder.getFullPathName().hashCode64());
+}
+
+void AudioEngine::recoverRecordingAsync(const juce::File& orphanedChunkFolder,
+                                        std::function<void(const juce::File&)> onDone)
+{
+    class RecoveryThread : public juce::Thread
+    {
+    public:
+        RecoveryThread(AudioEngine& e, juce::File f, std::function<void(const juce::File&)> cb)
+            : juce::Thread("BDG Recovery"), engine(e), folder(std::move(f)), done(std::move(cb)) {}
+
+        void run() override
+        {
+            // Lock the folder while copying, so a second copy of the app does
+            // not offer it for recovery at the same time.
+            juce::InterProcessLock lock(AudioEngine::lockNameFor(folder));
+            lock.enter(0);
+
+            const auto result = engine.recoverRecording(folder);
+            auto aliveFlag = engine.alive;
+            auto cb = done;
+            juce::MessageManager::callAsync([aliveFlag, cb, result]()
+            {
+                if (aliveFlag->load() && cb)
+                    cb(result);
+            });
+        }
+
+    private:
+        AudioEngine& engine;
+        juce::File folder;
+        std::function<void(const juce::File&)> done;
+    };
+
+    if (recoveryThread != nullptr)
+    {
+        // The caller chains recoveries one after another, so the previous one
+        // has already reported back; this only joins a finished thread.
+        recoveryThread->stopThread(-1);
+        recoveryThread.reset();
+    }
+
+    recoveryThread = std::make_unique<RecoveryThread>(*this, orphanedChunkFolder, std::move(onDone));
+    recoveryThread->startThread();
 }
 
 void AudioEngine::discardRecording(const juce::File& orphanedChunkFolder)
@@ -1294,7 +1541,9 @@ void AudioEngine::processRecording(const juce::File& file,
 
             if (reader == nullptr)
             {
-                emitError("Failed to read file: " + file.getFullPathName());
+                // No path here: this string ends up in the error telemetry,
+                // and a path carries the user's account name.
+                emitError("Failed to read file");
                 return;
             }
 
@@ -1369,12 +1618,30 @@ void AudioEngine::processRecording(const juce::File& file,
 
             if (threadShouldExit()) { emitError("Cancelado"); return; }
 
+            // 6b) The compressor (no make-up gain) and the de-esser both pull
+            // the level down after the first normalisation, so the file used
+            // to come out well below the -16 dB target. Normalising first is
+            // still useful — it puts the material where the compressor
+            // thresholds expect it — but the target has to be set last, and
+            // its limiter replaces their hard clip as the final peak stage.
+            // No emitStep: the overlay lists each treatment once, and
+            // re-announcing "normalize" relit the first item after the rest.
+            if (doNormalize && (doCompressor || doDeEsser))
+                Dsp::normalize(buffer, sampleRate);
+
+            if (threadShouldExit()) { emitError("Cancelado"); return; }
+
             // 7) Save back to file
             DBG("DSP: saving to " + file.getFullPathName());
             emitStep("saving");
 
             juce::File tempFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_tmp.wav");
 
+            // A leftover from an interrupted run would be appended to:
+            // FileOutputStream opens an existing file at its end.
+            tempFile.deleteFile();
+
+            bool writeOk = false;
             {
                 juce::WavAudioFormat wav;
                 std::unique_ptr<juce::FileOutputStream> outStream(
@@ -1391,18 +1658,49 @@ void AudioEngine::processRecording(const juce::File& file,
 
                 if (writer == nullptr)
                 {
+                    tempFile.deleteFile();
                     emitError("Failed to create WAV writer");
                     return;
                 }
 
-                outStream.release(); // writer owns the stream now
-                writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
+                auto* rawOut = outStream.release(); // writer owns the stream now
+                writeOk = writer->writeFromAudioSampleBuffer(buffer, 0, numSamples)
+                          && flushToDisk(writer, rawOut); // synced before the original is replaced
                 delete writer;
             }
 
-            // Replace original with processed file
-            bool moved = tempFile.moveFileTo(file);
-            DBG("DSP: moveFileTo " + juce::String(moved ? "OK" : "FAILED"));
+            // The processed file replaces the original take, so it must be
+            // proven complete first. This used to ignore the write result and
+            // swap in whatever reached the disk — a full disk mid-save turned
+            // the recording into a truncated file reported as "saved".
+            bool good = writeOk;
+            if (good && bitsPerSample == 24)
+            {
+                good = verifyWavOnDisk(formatManager, tempFile, totalSamples);
+            }
+            else if (good)
+            {
+                std::unique_ptr<juce::AudioFormatReader> check(formatManager.createReaderFor(tempFile));
+                good = check != nullptr && check->lengthInSamples == totalSamples;
+            }
+
+            if (! good)
+            {
+                tempFile.deleteFile();
+                emitError("Could not write the processed file (disk full?). "
+                          "The original recording was kept unchanged.");
+                return;
+            }
+
+            // replaceFileIn renames over the original in one step; moveFileTo
+            // deleted the original first, leaving a window with neither file.
+            if (! tempFile.replaceFileIn(file))
+            {
+                tempFile.deleteFile();
+                emitError("Could not replace the original recording. "
+                          "It was kept unchanged.");
+                return;
+            }
 
             // 8) Notify finished
             emitFinish(file);

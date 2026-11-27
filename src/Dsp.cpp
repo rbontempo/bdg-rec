@@ -318,22 +318,29 @@ void Dsp::noiseReduce(juce::AudioBuffer<float>& buffer, double sampleRate)
     std::vector<float> frame_in((size_t) frameSize);
     std::vector<float> frame_out((size_t) frameSize);
 
-    while (pos + frameSize <= processLen)
+    // RNNoise lags its input by TWO frames (20 ms at 48 kHz): one for the
+    // overlap-add, one because it synthesises the previous call's spectrum
+    // (delayed_X in denoise.c). Measured: a click at n comes out at n+960.
+    // Uncompensated, the whole take moved 20 ms late — enough to misalign it
+    // against other tracks — and its last 20 ms were never emitted. Run two
+    // extra zero frames through and drop the first two frames of output.
+    const int delay = 2 * frameSize;
+    const int total = processLen + delay;
+    for (pos = 0; pos < total; pos += frameSize)
     {
-        std::copy(processData + pos, processData + pos + frameSize, frame_in.data());
-        rnnoise_process_frame(st, frame_out.data(), frame_in.data());
-        std::copy(frame_out.data(), frame_out.data() + frameSize, output.data() + pos);
-        pos += frameSize;
-    }
-
-    // Handle remaining samples: pad with zeros, process, keep only what we need
-    if (pos < processLen)
-    {
-        int remaining = processLen - pos;
         std::fill(frame_in.begin(), frame_in.end(), 0.0f);
-        std::copy(processData + pos, processData + pos + remaining, frame_in.data());
+        const int available = juce::jlimit(0, frameSize, processLen - pos);
+        if (available > 0)
+            std::copy(processData + pos, processData + pos + available, frame_in.data());
+
         rnnoise_process_frame(st, frame_out.data(), frame_in.data());
-        std::copy(frame_out.data(), frame_out.data() + remaining, output.data() + pos);
+
+        for (int j = 0; j < frameSize; ++j)
+        {
+            const int outIdx = pos + j - delay;
+            if (outIdx >= 0 && outIdx < processLen)
+                output[static_cast<size_t>(outIdx)] = frame_out[static_cast<size_t>(j)];
+        }
     }
 
     rnnoise_destroy(st);

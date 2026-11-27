@@ -2,6 +2,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <atomic>
+#include <functional>
 #include <memory>
 
 class AudioEngine : public juce::AudioIODeviceCallback,
@@ -139,8 +140,20 @@ public:
     //==============================================================================
     // Task 3: Post-crash recovery
     juce::Array<juce::File> findOrphanedRecordings(const juce::File& destFolder);
+    // Blocking; copies the whole take. Tests and recoverRecordingAsync use it.
     juce::File recoverRecording(const juce::File& orphanedChunkFolder);
+    // Same, on a background thread — copying a long take on the message
+    // thread froze the app, which is exactly what SaveThread exists to avoid.
+    // `onDone` runs on the message thread with the recovered file, or an
+    // empty File on failure. Not called if the engine is destroyed first.
+    void recoverRecordingAsync(const juce::File& orphanedChunkFolder,
+                               std::function<void(const juce::File&)> onDone);
+    bool isRecovering() const { return recoveryThread != nullptr && recoveryThread->isThreadRunning(); }
     void discardRecording(const juce::File& orphanedChunkFolder);
+
+    // Left in a chunk folder that was recovered with unreadable chunks: the
+    // folder is kept, but no longer offered at every launch.
+    static constexpr const char* kRecoveredMarker = ".bdg_recovered";
 
 private:
     juce::AudioDeviceManager deviceManager;
@@ -169,6 +182,19 @@ private:
 
     std::atomic<int>    nativeChannels{0};
     std::atomic<double> nativeSampleRate{0.0};
+
+    // Held for as long as a take's chunk folder is in use (recording and
+    // merging). Another process — a second copy of the app — sees the folder
+    // as locked and leaves it alone instead of offering to "recover" or
+    // "discard" a take that is still being written. Released by the OS if the
+    // app dies, which is exactly when the folder becomes a real orphan.
+    std::unique_ptr<juce::InterProcessLock> takeLock;
+    static juce::String lockNameFor(const juce::File& chunkFolder);
+
+    // Device the take started on. When it disappears, JUCE quietly reopens
+    // the default input, so without this the take carried on from the
+    // built-in microphone with nothing on screen to say so.
+    juce::String recordingDeviceName;
 
     // Chunk recording
     juce::File chunkFolder;
@@ -266,6 +292,8 @@ private:
     };
 
     std::unique_ptr<SaveThread> saveThread;
+
+    std::unique_ptr<juce::Thread> recoveryThread;
 
     //==============================================================================
     // DSP background thread

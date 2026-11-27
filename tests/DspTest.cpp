@@ -162,10 +162,42 @@ static void testCompressAndDeEss()
     }
 }
 
+// RNNoise has a built-in latency; Dsp::noiseReduce must cancel it, or the
+// treated take drifts against any other track recorded alongside it.
+static void testNoiseReduceAlignment()
+{
+    const double sr = 48000.0;
+    const int n = 48000;
+    juce::AudioBuffer<float> b(1, n);
+    juce::Random rng(1234);
+    auto* d = b.getWritePointer(0);
+    for (int i = 0; i < n; ++i)
+        d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.3f;
+
+    juce::AudioBuffer<float> original(b);
+    Dsp::noiseReduce(b, sr);
+
+    // Cross-correlation over lags 0..1500; the peak must sit at 0.
+    const auto* x = original.getReadPointer(0);
+    const auto* y = b.getReadPointer(0);
+    int bestLag = -1;
+    double best = 0.0;
+    for (int lag = 0; lag <= 1500; ++lag)
+    {
+        double acc = 0.0;
+        for (int i = 0; i + lag < n; ++i)
+            acc += (double) x[i] * (double) y[i + lag];
+        if (std::abs(acc) > best) { best = std::abs(acc); bestLag = lag; }
+    }
+    std::printf("     noiseReduce correlation peak at lag %d\n", bestLag);
+    check(bestLag >= 0 && bestLag <= 2, "noise reduction output is time-aligned with the input");
+}
+
 int main()
 {
     testNormalize();
     testNoiseReduce();
+    testNoiseReduceAlignment();
     testCompressAndDeEss();
 
     std::printf("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASS" : "FAILED",

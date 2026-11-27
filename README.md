@@ -57,12 +57,12 @@ O site vive aqui desde agosto/2026, com o histórico dele preservado. Os
 workflows são filtrados por caminho: mexer em `site/` não gera release do app,
 e mexer no app não roda o check do site.
 
-O deploy do site continua manual (`site/deploy.sh`, SSH para o SiteGround) —
+O deploy do site continua manual (`site/deploy.sh`, SSH para a Hostinger) —
 as credenciais não estão no repositório.
 
 ## Tech Stack
 
-- C++17
+- C++20
 - JUCE 8 (fetched automatically via CMake)
 - RNNoise (Xiph) for noise suppression
 - GPLv3 license

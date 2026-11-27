@@ -1,0 +1,42 @@
+# rec.bdg.fm — Hostinger (migrado da SiteGround em 2026-09-06)
+
+# URLs sem extensao: /gravador-podcast -> /gravador-podcast.html
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.+)$ $1.html [L]
+
+# ---------------------------------------------------------------------------
+# PROTECAO DE DOTFILES — NAO REMOVER
+#
+# Na SiteGround o /.env devolvia 403 por configuracao DO SERVIDOR, nao por regra
+# do site: o .htaccess de la tinha apenas o bloco de reescrita acima. O Hostinger
+# nao da essa garantia, e o .env carrega DB_PASS, API_KEY e ADMIN_PASSWORD_HASH.
+# Sem este bloco, um GET /.env entrega as credenciais em texto puro.
+#
+# Verificado em 2026-09-06 no destino: /.env, /.env.bak e /.htaccess devolvem 403,
+# e o corpo nao contem DB_PASS nem API_KEY.
+# ---------------------------------------------------------------------------
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>
+RedirectMatch 404 /\.(?!well-known/)
+
+# Arquivos de servidor que nao sao paginas (schema, scripts, docs) tambem nao
+# sao servidos, caso algum dia subam junto.
+<FilesMatch "\.(sql|sh|md|mjs|yml)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>

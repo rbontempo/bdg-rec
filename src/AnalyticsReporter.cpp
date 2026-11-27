@@ -184,12 +184,17 @@ void AnalyticsReporter::sendBatch()
     if (! enabled.load() || ! consentAsked.load())
         return;
 
+    // At most MAX_SEND_BATCH per request: the server refuses bigger batches.
+    // It used to cut them at 100 and still answer "ok", so up to 400 queued
+    // events were dropped every time the app came back online.
     juce::Array<juce::var> batch;
     {
         juce::ScopedLock lock(queueLock);
         if (eventQueue.isEmpty()) return;
-        batch = eventQueue;
-        eventQueue.clear();
+        const int n = juce::jmin(eventQueue.size(), MAX_SEND_BATCH);
+        for (int i = 0; i < n; ++i)
+            batch.add(eventQueue.getReference(i));
+        eventQueue.removeRange(0, n);
     }
 
     auto batchObj = new juce::DynamicObject();

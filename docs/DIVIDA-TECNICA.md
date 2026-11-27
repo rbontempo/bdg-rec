@@ -114,3 +114,43 @@ o uso real mostrou o contrário:
 - `uiAlive` inconsistente, `UpdateChecker` (null-check e Y2038), menu do Apple
   sem troca de idioma, `ToggleRow` com estado duplicado, `DspOverlay` com
   proteção redundante, comentário enganoso da chave XOR e as miudezas.
+
+---
+
+## Revisão de novembro/2026 — o que ficou de fora
+
+Corrigido na branch `fix/revisao-fable`: instância única + lock por take,
+reserva de espaço para o merge, verificação pelo tamanho real no disco,
+chunk ilegível preserva a pasta, flush/fsync periódico, troca silenciosa de
+microfone, recuperação fora do message thread, DSP com escrita verificada e
+troca atômica, nível final da cadeia, atraso do RNNoise, `.env` fora do
+webroot, login com rate limit, validação de tipos e lote na API, testes
+antes do release.
+
+Ficou para depois:
+
+- **DSP destrutivo.** O tratamento ainda substitui o arquivo cru (agora só
+  depois de verificado). Manter o cru ao lado (`*_tratado.wav`) é decisão de
+  produto: dobra o espaço usado.
+- **Erro de I/O durante a gravação.** O `ThreadedWriter` do JUCE descarta o
+  retorno da escrita; uma falha com espaço livre só aparece na rotação ou no
+  merge (que agora a detecta pelo tamanho em disco). Detectar ao vivo exige
+  um writer próprio.
+- **Testes de gravação no CI.** Continuam dependendo de microfone. Dirigir
+  `audioDeviceIOCallbackWithContext` com buffers sintéticos resolveria.
+- **Anti-alias na reamostragem para o RNNoise** (88,2/96 kHz → 48 kHz) e o
+  limiter com ataque instantâneo.
+- **Confirmação ao fechar durante a gravação** e timeout dos destrutores de
+  rede (até 35 s no quit com rede travada).
+- **API:** SRI no `admin.html` (o CDN do Tailwind é dinâmico, não aceita SRI),
+  migração 001 não atômica (já rodou), `events_hardware_legacy` fora da
+  retenção de 180 dias, IP real atrás de proxy não verificado.
+- **Órfãos em outra pasta:** só a pasta de destino atual é varrida.
+- **fsync no macOS não é `F_FULLFSYNC`.** O `flushToDisk` garante que o dado
+  saiu do processo e do page cache, mas o disco pode segurá-lo no cache
+  dele numa queda de energia. O `FileOutputStream` do JUCE não expõe o fd.
+- **Arquivos de lock acumulam** em `~/Library/Caches/com.juce.locks/`
+  (0 byte, um por take). O JUCE não os remove.
+- **Monitor ligado com entrada ≠ saída:** o dispositivo combinado do CoreAudio
+  pode não fechar quando o microfone é desplugado, e a checagem de troca de
+  entrada não dispara. Já era assim antes.
