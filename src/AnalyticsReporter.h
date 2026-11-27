@@ -56,6 +56,7 @@ private:
     // wait() then blocks forever and the reporter never sends again.
     static constexpr int MAX_BACKOFF_SHIFT = 4;
     static constexpr int MAX_QUEUE_SIZE = 500;
+    static constexpr int MAX_SEND_BATCH = 100; // site/api/events.php accepts up to 500 (old clients)
     int currentIntervalMs = BATCH_INTERVAL_MS;
     int consecutiveFailures = 0;
 

@@ -20,7 +20,7 @@ struct StringTable
     juce::String gravacaoParadaDisco, dispositivoDesconectado, audioDesconectado;
     juce::String gravacaoAnterior, falhaRecuperacao;
     juce::String recuperar, descartar, ignorar;
-    juce::String recuperado, descartado;
+    juce::String recuperado, descartado, recuperando;
     juce::String salvo, salvoNaPasta;
     juce::String erroProcessamento, erroDesconhecido;
     juce::String updateAvailableTitle, updateAvailableBody, updateDownload, updateIgnore;
@@ -91,6 +91,7 @@ namespace Strings
         .ignorar = "Ignorar",
         .recuperado = "Recuperado: ",
         .descartado = "Descartado.",
+        .recuperando = juce::CharPointer_UTF8 ("Recuperando grava\xc3\xa7\xc3\xa3" "o anterior..."),
         .salvo = "Salvo: ",
         .salvoNaPasta = juce::CharPointer_UTF8 ("A grava\xc3\xa7\xc3\xa3" "o foi salva com sucesso na pasta "),
         .erroProcessamento = juce::CharPointer_UTF8 ("Erro no processamento: "),
@@ -181,6 +182,7 @@ namespace Strings
         .ignorar = "Ignore",
         .recuperado = "Recovered: ",
         .descartado = "Discarded.",
+        .recuperando = "Recovering previous recording...",
         .salvo = "Saved: ",
         .salvoNaPasta = "Recording saved successfully to folder ",
         .erroProcessamento = "Processing error: ",

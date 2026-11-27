@@ -184,13 +184,25 @@ void MainComponent::promptForOrphans(juce::Array<juce::File> orphans, int index)
 
         if (result == 1) // Recuperar
         {
-            auto recovered = audioEngine.recoverRecording(folder);
-            if (recovered.existsAsFile())
-                inlineWarning.show(
-                    Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
-            else
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                    "BDG rec", Strings::get().falhaRecuperacao);
+            // Copying a long take takes a while; do it off the message thread
+            // and only move on to the next orphan once this one is done.
+            inlineWarning.show(Strings::get().recuperando, InlineWarning::Info);
+            audioEngine.recoverRecordingAsync(folder,
+                [this, aliveFlag, orphans, index](const juce::File& recovered)
+                {
+                    if (! aliveFlag->load())
+                        return;
+
+                    if (recovered.existsAsFile())
+                        inlineWarning.show(
+                            Strings::get().recuperado + recovered.getFileName(), InlineWarning::Info);
+                    else
+                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                            "BDG rec", Strings::get().falhaRecuperacao);
+
+                    promptForOrphans(orphans, index + 1);
+                });
+            return;
         }
         else if (result == 2) // Descartar
         {
@@ -543,14 +555,16 @@ void MainComponent::handleRecordButtonClicked()
             return;
         }
 
-        // Check disk space before recording (need at least 1 hour = ~520MB)
+        // Check disk space before recording: room for 1 hour of audio, twice
+        // over — the chunks, plus the merged copy written when the take stops
+        // (~1 GB at 48 kHz).
         {
             auto freeBytes = folder.getBytesFreeOnVolume();
             double sampleRate = 48000.0;
             if (auto* dev = audioEngine.getDeviceManager().getCurrentAudioDevice())
                 sampleRate = dev->getCurrentSampleRate();
             int bytesPerSec = (int)(sampleRate * 3.0); // 24-bit mono
-            int remainingMin = (int)(freeBytes / bytesPerSec / 60);
+            int remainingMin = (int)(freeBytes / (2 * (juce::int64) bytesPerSec) / 60);
 
             if (remainingMin < 60)
             {

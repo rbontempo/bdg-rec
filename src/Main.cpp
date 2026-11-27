@@ -14,6 +14,17 @@ public:
 
     void shutdown() override { mainWindow.reset(); }
 
+    // One copy at a time. A second one scanned the recordings folder, found
+    // the take the first copy was still writing, and offered to "recover" or
+    // "discard" it — both of which deleted chunks out from under it.
+    bool moreThanOneInstanceAllowed() override { return false; }
+
+    void anotherInstanceStarted(const juce::String&) override
+    {
+        if (mainWindow != nullptr)
+            mainWindow->toFront(true);
+    }
+
     class MainWindow : public juce::DocumentWindow
     {
     public:

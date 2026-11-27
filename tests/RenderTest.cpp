@@ -72,9 +72,15 @@ static void testWaveformHeight()
         for (int i = 0; i < 200; ++i)
             wd.pushRmsSample(dbToRms(db));
 
-        juce::Image img(juce::Image::ARGB, w, h, true);
-        juce::Graphics g(img);
-        wd.paint(g);
+        // Software image, and the Graphics closed before reading: on Windows
+        // JUCE 8 backs a default Image with Direct2D, which only lands the
+        // drawing when the context is destroyed. Reading earlier saw a blank
+        // image and the test failed on CI, though the widget was fine.
+        juce::Image img(juce::Image::ARGB, w, h, true, juce::SoftwareImageType());
+        {
+            juce::Graphics g(img);
+            wd.paint(g);
+        }
 
         // Measure the drawn column nearest the right edge, where the newest
         // sample lands.
@@ -113,9 +119,12 @@ static void testVuRulerFitsInside()
     vu.setSize(w, h);
     vu.setLevels(0.02f, 0.02f);
 
-    juce::Image img(juce::Image::ARGB, w, h, true);
-    juce::Graphics g(img);
-    vu.paint(g);
+    // See the note in the waveform test: software image, Graphics closed first.
+    juce::Image img(juce::Image::ARGB, w, h, true, juce::SoftwareImageType());
+    {
+        juce::Graphics g(img);
+        vu.paint(g);
+    }
 
     // Rightmost column carrying any ink at all.
     int rightmost = -1;

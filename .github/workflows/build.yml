@@ -23,7 +23,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Every push to main publishes a release that the in-app update checker then
+  # offers to users. Tests used to run only on pull requests, and direct pushes
+  # to main skipped them entirely. Gate the version bump on them.
+  test:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+
+      - name: Cache fetched dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-deps-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: ${{ runner.os }}-deps-
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBDG_BUILD_TESTS=ON
+
+      - name: Build unit tests
+        run: cmake --build build --config Release --target BDG_UnitTests BDG_DspTests BDG_RenderTests
+
+      - name: Unit tests
+        run: ctest --test-dir build -C Release -L unit --output-on-failure
+
   version:
+    needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

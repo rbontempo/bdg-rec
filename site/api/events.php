@@ -10,34 +10,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Validate API key
 $apiKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
-if (!hash_equals(getApiKey(), $apiKey)) {
+$expectedKey = getApiKey();
+// An empty key on the server must not mean "accept anything".
+if ($expectedKey === '' || !is_string($apiKey) || !hash_equals($expectedKey, $apiKey)) {
     jsonResponse(401, ['error' => 'Invalid API key']);
 }
 
 // Rate limiting
 $db = getDb();
-$ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-$minuteBucket = intdiv(time(), 60);
-
-// Cleanup old rate limit entries (~1% of requests)
-if (random_int(1, 100) === 1) {
-    $cutoff = $minuteBucket - 60; // 1 hour ago
-    $db->prepare('DELETE FROM rate_limits WHERE minute_bucket < ?')->execute([$cutoff]);
-}
-
-$stmt = $db->prepare(
-    'INSERT INTO rate_limits (ip, minute_bucket, hits) VALUES (?, ?, 1)
-     ON DUPLICATE KEY UPDATE hits = hits + 1'
-);
-$stmt->execute([$ip, $minuteBucket]);
-
-$hitsStmt = $db->prepare(
-    'SELECT hits FROM rate_limits WHERE ip = ? AND minute_bucket = ?'
-);
-$hitsStmt->execute([$ip, $minuteBucket]);
-$hits = (int) $hitsStmt->fetchColumn();
-
-if ($hits > 60) {
+$ip = clientIp();
+if (!rateLimitAllows($db, 'e', $ip, 60)) {
     jsonResponse(429, ['error' => 'Rate limit exceeded']);
 }
 
@@ -49,7 +31,19 @@ if (!is_array($body)) {
 
 // Handle batch or single event
 $events = isset($body['batch']) ? $body['batch'] : [$body];
-$events = array_slice($events, 0, 100); // cap batch size
+if (!is_array($events)) {
+    jsonResponse(400, ['error' => 'Invalid batch']);
+}
+
+// Current apps send at most 100 per request, but older ones send their whole
+// queue (up to 500, persisted across runs) and re-send it unchanged on any
+// error. So accept everything up to 500: refusing would wedge those clients
+// forever, and cutting at 100 while answering "ok" (the old behaviour) threw
+// the rest away. Only a batch no real client can produce is refused.
+const MAX_BATCH = 500;
+if (count($events) > MAX_BATCH) {
+    jsonResponse(413, ['error' => 'Batch too large', 'max' => MAX_BATCH]);
+}
 
 $validTypes = ['app_open', 'recording_end', 'dsp_applied', 'export_complete', 'error'];
 $validEffects = ['normalize', 'denoise', 'compress', 'deesser'];
@@ -62,20 +56,29 @@ $insertStmt = $db->prepare(
 $inserted = 0;
 $db->beginTransaction();
 try {
+    // Non-string fields used to reach substr()/strlen() and throw a TypeError
+    // (HTTP 500). Anything that is not a plain string becomes empty.
+    $str = fn($v) => is_string($v) ? $v : '';
+
     foreach ($events as $evt) {
-        $type = $evt['event'] ?? '';
-        $machineId = $evt['machine_id'] ?? '';
+        if (!is_array($evt)) continue;
+
+        $type = $str($evt['event'] ?? '');
+        $machineId = $str($evt['machine_id'] ?? '');
 
         if (!in_array($type, $validTypes, true)) continue;
-        if (strlen($machineId) === 0 || strlen($machineId) > 60) continue;
+        if (!preg_match('/^[A-Za-z0-9_-]{1,60}$/', $machineId)) continue;
 
-        $os = substr($evt['os'] ?? '', 0, 40);
-        $version = substr($evt['app_version'] ?? '', 0, 15);
+        $os = substr($str($evt['os'] ?? ''), 0, 40);
+        $version = substr($str($evt['app_version'] ?? ''), 0, 15);
         // Never store the raw device name — see normalizeHardware().
-        $hardware = normalizeHardware($evt['hardware'] ?? null);
-        $locale = substr($evt['locale'] ?? '', 0, 10);
+        $hardware = normalizeHardware($str($evt['hardware'] ?? ''));
+        $locale = substr($str($evt['locale'] ?? ''), 0, 10);
 
         $extra = $evt['extra'] ?? null;
+        if ($extra !== null && !is_array($extra)) {
+            $extra = null;
+        }
         if ($extra !== null && strlen(json_encode($extra)) > 2048) {
             $extra = null;
         }
@@ -85,6 +88,15 @@ try {
             }
             if (isset($extra['file_size_mb']) && ($extra['file_size_mb'] < 0 || $extra['file_size_mb'] > 10000)) {
                 $extra['file_size_mb'] = min(max((float)$extra['file_size_mb'], 0), 10000);
+            }
+            // Free text from the app can carry file paths (and with them the
+            // user's account name). Keep it short and strip anything path-like.
+            if (isset($extra['message'])) {
+                $msg = $str($extra['message']);
+                // Paths can contain spaces ("Podcast do Fulano"), so cut
+                // everything from the first path-looking character on.
+                $msg = preg_replace('#(?:[A-Za-z]:)?[\\\\/].*$#us', '<path>', $msg);
+                $extra['message'] = mb_substr($msg, 0, 120);
             }
             if (isset($extra['effects']) && is_array($extra['effects'])) {
                 $extra['effects'] = array_values(array_filter($extra['effects'], fn($e) => in_array($e, $validEffects, true)));
